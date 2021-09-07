@@ -21,7 +21,10 @@ else
 end
 
 % figure out max_ch            
-index = rez.ypos(m);
+% index = rez.ypos(m);      % CHANGED 2/7/20 - found small % of units for
+% whom this index doesnt match max(waveforms), in which case the latter is
+% correct
+[~,index] =  max(range(waveforms));
 shank = ceil(index/shankchs)-1;       
 [~,pos] = sort(chans(shank*shankchs+1:(shank+1)*shankchs,2));
 max_ch = find(flipud(pos)==(index-(shank*shankchs)));

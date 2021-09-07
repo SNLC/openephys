@@ -1,4 +1,4 @@
-function barplot_by_layer(data2plot,layers,clusttype,ylabel,title)
+function barplot_by_layer(data2plot,layers,clusttype,ylabel,title,color_mat)
 
 % data2plot should be an  m by n matrix of what you want to plot (e.g.
 % OSI) where m is the number of conditions and n is the number of units
@@ -6,6 +6,8 @@ function barplot_by_layer(data2plot,layers,clusttype,ylabel,title)
 % clusttype is an n-length vector specifying whether unit is single unit
 % (1) or multiunit (2)
 % ylabel is a string name of the dependent variable
+% color_mat - mx3 matrix of color specifications for each condition - changed
+% from mani 6/13/20 so that the use can flexibly determine which colors to use
 
 chs_23 = find(layers == 2.5);
 chs_4 = find(layers == 4);
@@ -58,7 +60,7 @@ groupwidth = min(0.8, numconds/(numconds+1.5));
 for i = 1:numconds
 % Based on barweb.m by Bolu Ajiboye from MATLAB File Exchange
 x(i,:) = (1:numbars) - groupwidth/2 + (2*i-1) * groupwidth / (2*numconds); % Aligning error bar with individual bar
-errorbar(x(i,:), mean_data(:,i),se_data(:,i), se_data(:,i), 'k', 'linestyle', 'none');
+errorbar(x(i,:), mean_data(:,i),se_data(:,i), se_data(:,i), 'color',[.2 .2 .2], 'linestyle', 'none','linewidth',5);
 end
 
 set(get(gca,'YLabel'),'String',ylabel,'Fontsize',16)
@@ -69,9 +71,15 @@ set(gca,'XTicklabel',{'L2/3', 'L4', 'L5A', 'L5B', 'L6'},'Fontsize',16)
 % if length(h) > 1
 %     set(h(2),'FaceColor','b','EdgeColor','b');
 % end
-% color_mat = [0 0 0; 0 0 1; 0 .8 1; 0 0.5 .4; 0 .7 .2]; % for graphing purposes (first is black, last is green)
-color_mat = [0 .8 1; 0 0 1; 0 0.5 .4];   % first is light blue, last is green
-% color_mat = [.9 0 .3; 0.50, 0.0780, 0.10]; % for halo (red)
+
+% % color_mat = [0 0 0; 0 0 1; 0 .8 1; 0 0.5 .4; 0 .7 .2]; % for graphing purposes (first is black, last is green)
+% if contains(mani,'halo','ignorecase',1)
+% %     color_mat = [.9 0 .3; 0.50, 0.0780, 0.10]; % for halo (red)
+%     color_mat = [ 0.6350, 0.0780, 0.1840];
+% else
+%     color_mat = [0 .8 1; 0 0 1; 0 0.5 .4];   % first is light blue, last is green
+% end
+
 for i = 1:length(h)
     set(h(i),'FaceColor',color_mat(i,:),'EdgeColor',color_mat(i,:));
 end
@@ -89,15 +97,24 @@ SUs = find(clusttype==1);
 MUs = find(clusttype==2);
 
 if length(h) > 1
-    plot(layer_ind(:,SUs),data2plot(:,SUs),'.','color',[.5 .5 .5],'MarkerSize',16)
+    plot(layer_ind(:,SUs),data2plot(:,SUs),'.','color',[.5 .5 .5],'MarkerSize',6)
+%     plot(layer_ind(:,SUs),data2plot(:,SUs),'o','color',[.5 .5 .5],'MarkerSize',3)
     plot(layer_ind(:,MUs),data2plot(:,MUs),'rs--','MarkerSize',24)
 else
-    plot(layer_ind(:,SUs),data2plot(:,SUs),'.','color',[.5 .5 .5],'MarkerSize',24)
+    plot(layer_ind(:,SUs),data2plot(:,SUs),'.','color',[.5 .5 .5],'MarkerSize',6)
+%     plot(layer_ind(:,SUs),data2plot(:,SUs),'o','color',[.5 .5 .5],'MarkerSize',3)
     plot(layer_ind(:,MUs),data2plot(:,MUs),'rs','MarkerSize',24)
 end
 
-xax = get(gca,'xlim');
-ylim([-1 1])
+% xax = get(gca,'xlim');
+xlim([min(h.XData)-.6 max(h.XData)+.6])
+if max(data2plot(:))<=1 
+    if min(data2plot(:))<0
+        ylim([-1 1])
+    else
+        ylim([0 1])
+    end
+end
 % line(xax,[-1/3 -1/3],'linestyle','--','color','k')
 % line(xax,[1/3 1/3],'linestyle','--','color','k')
 
@@ -109,6 +126,7 @@ ylim([-1 1])
 
 % NEW (6/14/19) - rotate plot so shows layers top-bottom on y-axis
 view(90,90)
+set(gca,'fontsize',18,'linewidth',2)
 
 print(fig, '-dpng',sprintf('%s%s',title,'_bylayer'))
 print2eps(sprintf('%s%s',title,'_bylayer'),fig)

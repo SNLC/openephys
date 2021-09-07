@@ -32,9 +32,13 @@ adcfiles = filenames(where_adcs);       % in case you aren't just using ADC inpu
 nADC = length(adcfiles);      % number of files with 'ADC' in file name (i.e. analog input files)
 
 %load electrode channels
+%load electrode channels
 first_half = exist(fullfile(exp_path,'100_CH1.continuous'),'file');
+second_hs = exist(fullfile(exp_path,'100_CH193.continuous'),'file');    % assumes using chs 64-127 on second headstage
 if first_half
     contfile = fullfile(exp_path,'100_CH1.continuous');
+elseif second_hs
+    contfile = fullfile(exp_path,'100_CH193.continuous');
 else
     contfile = fullfile(exp_path,'100_CH65.continuous');
 end
@@ -62,6 +66,20 @@ eventfile = fullfile(exp_path,'all_channels.events');
 % dataTime(eventIdx(nsamples-10:nsamples))
 % eventTime(nsamples-10:nsamples)
 
+% should this be added in??????? (9/29/20) < doesn't really matter - actual entries of
+% field_trials arent actually used. BUT does matter for movement encoders (MAK 1/15/21)
+% check for gaps in dataTime and adjust dataTime and eventTimes accordingly
+if sum(diff(dataTime).*amp_sr >= 2)   % if theres a gap of 2 or more samples between data points
+    warning(sprintf('Warning: there are %d gaps in the data files',sum(diff(dataTime).*amp_sr >= 2)))
+    gap_ts = find(diff(dataTime).*amp_sr>=2); % units are samples
+    for tt = 1:length(gap_ts)
+        gap(tt) = diff([dataTime(gap_ts(tt)),dataTime(gap_ts(tt)+1)]);      % in sec
+        dataTime(gap_ts(tt)+1:end) = dataTime(gap_ts(tt)+1:end) - gap(tt) + 1/amp_sr;
+        eventTime(eventTime*amp_sr>=gap_ts(tt)) = eventTime(eventTime*amp_sr>=gap_ts(tt)) - gap(tt) + 1/amp_sr;
+    end
+end
+eventIdx = floor((eventTime-dataTime(1))*amp_sr+1);
+
 % in case of weird event where analog and data file lengths don't match
 if size(ADCin,2)~=nsamples
     warning('Amplifier and analog data file lengths dont match.')
@@ -87,7 +105,9 @@ encdBCH = 2;
 
 %define analog channels
 photo = ADCin(1,:);
-LED = ADCin(2,:);
+if size(ADCin,1)>1  % if opto
+    LED = ADCin(2:end,:);   % changed 9/2/20 - before was just ADCin(2,:) (MAK)
+end
 clear ADCin
 
 %getSyncTimes for "re"
@@ -169,9 +189,12 @@ bad_res = [find(diff(re)>postdelay_ms)+1; find(diff(re)>postdelay_ms)+2];
 stim_times = re;
 stim_times(bad_res) = [];
 start_times = [re(1); re(find(diff(re)>postdelay_ms)+1)];       % should be one more than number of trials because last "starttime" should actually be the end time
-if sum(floor(diff(start_times)/1000)~=(postdelay+stimtime))
-    error('trial starttimes incorrectly assigned!')
-end
+% ^ i think this isn't totally accurate, but the actual values aren't
+% actually used...
+
+% if sum(floor(diff(start_times)/1000)~=(postdelay+stimtime))
+%     error('trial starttimes incorrectly assigned!')
+% end
 start_times(end) = [];
 % check number of trials
 if (stimtime/4)*Analyzer.L.NumTrials ~= size(field_trials,1)    % assumes epoch signal every four sec
@@ -231,7 +254,11 @@ end
 
 %save variables in data.mat
 cd(exp_path)
-save('data.mat', 'trials','field_trials','amp_sr','photo','LED','epoc','encdA','encdB','re','time_index','stim_times','start_times')
+if exist('LED','var')
+    save('data.mat', 'trials','field_trials','amp_sr','photo','LED','epoc','encdA','encdB','re','time_index','stim_times','start_times')
+else
+    save('data.mat', 'trials','field_trials','amp_sr','photo','epoc','encdA','encdB','re','time_index','stim_times','start_times')
+end
 
 end
 
@@ -250,7 +277,7 @@ gaussFilterNorm = gaussFilter';
 
 x = ifft(fft(x).*abs(fft(gaussFilterNorm)));
 
-thresh =(max(x)+min(x))*.75;    % changed from .5 mak 6/28/19
+thresh =(max(x)+min(x))*.7;    % changed from .5 mak 6/28/19
 
 x = (sign(x-thresh) + 1)/2;
 

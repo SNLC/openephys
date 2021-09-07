@@ -1,9 +1,11 @@
-function split_exp_sts(system,path)
+function split_exp_sts(system,path,nCh)
 
 % if kilosort was run on concatenated data, create separate spike_times and
 % spike_clusters files for each separate experiment
 %
 % path - main direction where experiment subdirectories are stored
+% EDITED 1/15/21 - add 'nCh' as input (# of channels) to check for same #
+% of samples among diff experiments
 
 cd(path)
 dirs = regexp(genpath(path),['[^;]*'],'match');
@@ -25,12 +27,28 @@ all_clusts = readNPY(fullfile(path,'spike_clusters.npy'));
 for n = 1:length(exp_dirs)
     if strcmpi(system,'openephys')
         first_half = exist(fullfile(exp_dirs{n},'100_CH1.continuous'),'file');
+        second_hs = exist(fullfile(exp_dirs{n},'100_CH193.continuous'),'file');    % assumes using chs 64-127 on second headstage
         if first_half
             contfile = fullfile(exp_dirs{n},'100_CH1.continuous');
+            contfile2 = sprintf('%s\\100_CH%d.continuous',exp_dirs{n},nCh);
+        elseif second_hs
+            contfile = fullfile(exp_dirs{n},'100_CH193.continuous');
+            contfile2 = sprintf('%s\\100_CH%d.continuous',exp_dirs{n},256);
         else
             contfile = fullfile(exp_dirs{n},'100_CH65.continuous');
+            contfile2 = sprintf('%s\\100_CH%d.continuous',exp_dirs{n},64+nCh);
         end
-        [data, dataTime, dataInfo] = load_open_ephys_data(contfile);
+        [~, dataTime, dataInfo] = load_open_ephys_data(contfile);
+        [~, dataTime2, dataInfo2] = load_open_ephys_data(contfile2);
+        if length(dataTime) ~= length(dataTime2)
+            if ~rem(abs(length(dataTime2)-length(dataTime)),1024)    
+                dataTime = dataTime2;   % use last one (because that's how the openephystorawbinary script handles it)
+                dataInfo = dataInfo2;
+                fprintf('Continuous files have unequal number of batches. Using last continous file. \n')
+            else
+                error('Unequal number of samples among continuous files')
+            end
+        end
     %     starttime(n) = dataTime(1)*dataInfo.header.sampleRate-dataInfo.header.blockLength;   % changed 6/4/18
         if dataTime(1) ~= 0
             startblock = dataInfo.nsamples(1);
@@ -40,7 +58,7 @@ for n = 1:length(exp_dirs)
     %         endblock = dataInfo.nsamples(1);
         end
         starttime(n) = dataTime(1)*dataInfo.header.sampleRate-startblock;       % actually, shouldn't this just be 0? (mak 4/9/19)
-        endtime(n) = starttime(n) + length(data) - 1;
+        endtime(n) = starttime(n) + length(dataTime) - 1;
     %     endtime(n) = floor(dataTime(end)*dataInfo.header.sampleRate)+endblock;     
     %     endtime(n) = dataInfo.header.blockLength * length(dataInfo.ts)+ starttime(n) - 1;
         if n>1
@@ -57,8 +75,8 @@ for n = 1:length(exp_dirs)
     %             starttime(n) = starttime(n) - err + 1;
     %             endtime(n) = endtime(n)-err +1;
     %         end
-            writeNPY(all_sts(all_sts>=endtime(n-1))-starttime(n),fullfile(exp_dirs{n},'spike_times.npy'));     % changed to -starttime MAK 6/12  
-            writeNPY(all_clusts(all_sts>=endtime(n-1)),fullfile(exp_dirs{n},'spike_clusters.npy'));
+            writeNPY(all_sts(all_sts>=starttime(n))-starttime(n),fullfile(exp_dirs{n},'spike_times.npy'));     % changed to -starttime MAK 6/12  
+            writeNPY(all_clusts(all_sts>=starttime(n)),fullfile(exp_dirs{n},'spike_clusters.npy'));
             % need to add saving cluster_groups.csv and rez and spike_templates.npy and channel_postions.npy in each experiment
             % subfolder
         end

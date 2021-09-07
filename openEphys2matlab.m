@@ -33,15 +33,18 @@ nADC = length(adcfiles);      % number of files with 'ADC' in file name (i.e. an
 
 %load electrode channels
 first_half = exist(fullfile(exp_path,'100_CH1.continuous'),'file');
+second_hs = exist(fullfile(exp_path,'100_CH193.continuous'),'file');    % assumes using chs 64-127 on second headstage
 if first_half
     contfile = fullfile(exp_path,'100_CH1.continuous');
+elseif second_hs
+    contfile = fullfile(exp_path,'100_CH193.continuous');
 else
     contfile = fullfile(exp_path,'100_CH65.continuous');
 end
 [~, dataTime, dataInfo] = load_open_ephys_data(contfile);       % changed from using 'faster' because I think times are less accurate?? - MAK 4/13/18
 % dataTime = dataTime./dataInfo(1).header.sampleRate;       % uncomment if using load_open_ephys_data_faster
 nsamples = length(dataTime);
-
+% dataTime is in SECONDS
 
 %load ADC inputs
 for i = 1:nADC
@@ -100,7 +103,9 @@ encdBCH = 2;
 
 %define analog channels
 photo = ADCin(1,:);
-LED = ADCin(2,:);
+if size(ADCin,1)>1  % if opto
+    LED = ADCin(2:end,:);   % changed 9/2/20 - before was just ADCin(2,:) (MAK)
+end
 clear ADCin
 
 %digital events
@@ -223,7 +228,11 @@ clear dataTime dataInfo ADCinfo adcfiles encdAOff encdAOn encdBOff encdBOn epocO
 
 %save variables in data.mat
 cd(exp_path)
-save('data.mat', 'trials','field_trials','amp_sr','photo','LED','epoc','encdA','encdB','re','time_index')
+if exist('LED','var')
+    save('data.mat', 'trials','field_trials','amp_sr','photo','LED','epoc','encdA','encdB','re','time_index')
+else
+    save('data.mat', 'trials','field_trials','amp_sr','photo','epoc','encdA','encdB','re','time_index')
+end
 
 end
 
@@ -241,7 +250,7 @@ gaussFilterNorm = gaussFilter';
 
 x = ifft(fft(x).*abs(fft(gaussFilterNorm)));
 
-thresh =(max(x)+min(x))*.75;        % changed from .5 2/26/19 MAK
+thresh =(max(x)+min(x))*.75;        % changed from .5 2/26/19 MAK 
 
 x = (sign(x-thresh) + 1)/2;
 

@@ -1,4 +1,4 @@
-function [all_light, pulse_dur, light_dur, av_light_start] = get_lightstim_v2(exp_path,exp_type)
+function [all_light, pulse_dur, light_dur, av_light_start] = get_lightstim_v3(exp_path,exp_type)
 
 % get_lightstim_v2.m - use LED input (analog or digital) to determine the parameters of the
 % optogenetic stimulation
@@ -40,12 +40,12 @@ LN              = length(epoc);
 div             = amp_sr/1000;
 zx              = 1:div:LN;
 izx             = floor(zx);
-light = LED(izx);       % put into 1000hz sampling rate
+light = LED(:,izx);       % put into 1000hz sampling rate
 
 %% first, find light trials
 for t = 1:size(field_trials,1)      % for each trial
     samps_per_t = max(diff(field_trials,[],2));                     % do this in case each trial doens't have exact same number of samples
-    light_out(t,:) = light(field_trials(t,1):field_trials(t,1)+samps_per_t);      % get actual values of LED input to Intan
+    light_out(t,:) = sum(light(:,field_trials(t,1):field_trials(t,1)+samps_per_t),1);      % get actual values of LED input to Intan - NEW 9/2/20 - sum to account for possibility of multiple LEDs - this fixes everything!
 end
 
 [~,ex_trial] = min(mean(light_out,2));        % get example of a trial in which there was definitely no light

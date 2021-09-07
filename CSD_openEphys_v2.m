@@ -25,11 +25,21 @@ end
 %% memory map the amplifier file, filter, & downsample
 
 first_half = exist(fullfile(exp_path,'100_CH1.continuous'),'file');
+second_hs = exist(fullfile(exp_path,'100_CH193.continuous'),'file');    % assumes using chs 64-127 on second headstage
 if first_half
-    contfile = fullfile(exp_path,'100_CH1.continuous');
+    firstch = 1;
+%     contfile = fullfile(exp_path,'100_CH1.continuous');
+elseif second_hs
+    if exist(fullfile(exp_path,'100_CH129.continuous'),'file')
+        firstch = 129;
+    else
+        firstch = 193;
+    end
 else
-    contfile = fullfile(exp_path,'100_CH65.continuous');
+    firstch = 65;
+%     contfile = fullfile(exp_path,'100_CH65.continuous');
 end
+contfile = sprintf('%s/100_CH%d.continuous',exp_path,firstch);
 [data, dataTime, dataInfo] = load_open_ephys_data_faster(contfile);
 dataTime = dataTime./dataInfo(1).header.sampleRate;       % uncomment if using load_open_ephys_data_faster
 nsamps = length(dataTime);
@@ -41,8 +51,12 @@ nchans = length(cell2mat(cellfun(@(x) strfind(x,'_CH'),ch_names,'UniformOutput',
 v = zeros(nsamps,nchans);   % preallocate matrix for raw data
 v(:,1) = data;
 clear data
-for i = 2:nchans
-    contfile = sprintf('%s/100_CH%d.continuous',exp_path,i);
+for i = 2:nchans        % bug fixed 1/10/20 (from i=1:nchans-1 - causes problem on line 52)
+    if first_half && second_hs && i>nchans/2     % if dual V1-LM recording
+        contfile = sprintf('%s/100_CH%d.continuous',exp_path,i+128);
+    else
+        contfile = sprintf('%s/100_CH%d.continuous',exp_path,i+firstch-1);
+    end
     [v(:,i),~,~] = load_open_ephys_data_faster(contfile);
 end
 
@@ -138,26 +152,33 @@ p = eval(sprintf('probemap_%s_func',probe));
 [~,inds] = sort(p.z);  % sorts from bottom to top
 chan_order = p.channels(inds);
 chan_order = flipud(chan_order);    % change from top to bottom
-xx = flipud(p.x(inds));
+xx = flipud(p.x(inds)); % so sorted from top to bottom
 nshanks = length(unique(p.shaft));
 diff_cols = unique(xx);
 x_dif = diff(diff_cols);
-num_cols = length(diff_cols) - sum(diff(diff_cols)<5); % 64D probe has x vals at -20, -16, 0 , 16, and 20, but consider 16 and 20 the same
-count = 1;
-for i=1:length(x_dif)-sum(x_dif<5)+1
-    if x_dif(i) < 5
-        if length(diff_cols)==1
-            xcolvals{count-1} = [xcolvals{count-1}; diff_cols];
-        else
-            xcolvals{count} = diff_cols(1:2);
-            diff_cols(1:2) = [];
-            x_dif(i)=[];
-        end
-    else
-        xcolvals{count} = diff_cols(1);
-        diff_cols(1) = [];
-    end
-    count = count+1;
+num_cols = length(diff_cols) - sum(diff(diff_cols)<12); % 64D probe has x vals at -20, -16, 0 , 16, and 20, but consider 16 and 20 the same
+% count = 1;
+% for i=1:length(x_dif)-sum(x_dif<12)+1
+%     if x_dif(i) < 12
+%         if length(diff_cols)==1
+%             xcolvals{count-1} = [xcolvals{count-1}; diff_cols];
+%         else
+%             xcolvals{count} = diff_cols(1:2);
+%             diff_cols(1:2) = [];
+%             x_dif(i)=[];
+%         end
+%     else
+%         xcolvals{count} = diff_cols(1);
+%         diff_cols(1) = [];
+%     end
+%     count = count+1;
+% end
+% NEW 9/25/20 - so it works for 128D probes as well as 64D and 128AN
+% (should work for all, but have only tested with those...)
+% - for 128D probes, treats two columns on a single shank as one
+shk_bounds = [1; find(x_dif>12)+1; length(diff_cols)+1];
+for i=1:num_cols % should be length(shk_bounds)-1
+    xcolvals{i} = diff_cols(shk_bounds(i):shk_bounds(i+1)-1);
 end
 probemap = nan(ceil(nchans/num_cols),num_cols);
 probemap_sh = probemap;
@@ -1577,7 +1598,12 @@ for sh = 1:nshanks
     layers(discreps,sh) = layers(discreps-1,sh);
 end
 layers = layers(:);
-layers_shank = shank-1;
+if second_hs && nshanks==2  % if using two 64Ds
+    layers_shank = shank;
+    layers_shank(layers_shank==2)=0;    % have to effectively flip shank #s so that chs 1-64 (i.e. from first headstage) are FIRST shank (otherwise shank assignment will get messed up in readWaveformsFromRez_K2.m)
+else
+    layers_shank = shank-1; % change to zero indexing
+end
 
 cd ..
     expdir = cd;

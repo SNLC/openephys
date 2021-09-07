@@ -1,4 +1,4 @@
-function [psth_norm, rfMap, stats] = sparsenoiseRF(unit_times_ds,stim_times,binsize,T,stim_trials,stim_key)
+function [psth_norm, rfMap, stats] = sparsenoiseRF(unit_times_ds,stim_times,binsize,T,stim_trials,run_trials,stim_key)
 % description here:
 
 % unit_times_ds = 
@@ -39,7 +39,11 @@ for lc = 1:length(lconds)
     for b = 1:nBW
         for y = 1:nY
             for x = 1:nX
-                which_trials = (stim_trials(:,1) == x)&(stim_trials(:,2) == y)&(stim_trials(:,3)==BW(b))&(stim_trials(:,4)==lconds(lc));
+                which_trials = zeros(1,size(spike_raster,2));
+                which_stim = (stim_trials(:,1) == x)&(stim_trials(:,2) == y)&(stim_trials(:,3)==BW(b))&(stim_trials(:,4)==lconds(lc))&(run_trials'==0);    % added 1/6/20 - exclude running trials!
+%                 which_stim = (stim_trials(:,1) == x)&(stim_trials(:,2) == y)&(stim_trials(:,3)==BW(b))&(stim_trials(:,4)==lconds(lc));    % include running trials
+                which_trials(stim_trials(which_stim,5))=1;
+                which_trials = logical(which_trials);
                 [psth(:,count),~] = make_psth_v2(binsize/1000,[0:binsize:T]./1000,which_trials',spike_raster',ones(1,length(which_trials)));
                 count = count+1;
             end
@@ -52,13 +56,13 @@ end
 % test_norm = test./max(test(:));
 % test_bs = test_norm(:,:,1);
 % test_bl = test(:,:,1);  % first time bin = baseline
-% test_bs = test - repmat(test_bl,1,1,size(test,3)); % baseline-subtracted
-% test_norm = test_bs./max(abs(test_bs(:)));  % normalize to the maximum response (up or down) in any time bin
+% % test_bs = test - repmat(test_bl,1,1,size(test,3)); % baseline-subtracted
+% % test_norm = test_bs./max(abs(test_bs(:)));  % normalize to the maximum response (up or down) in any time bin
 % figure;
 % for i=1:size(test,3)
 %     subplot(5,5,i)
 %     imagesc((squeeze(test_norm(:,:,i)-test_bs))')
-%     imagesc(squeeze(test_norm(:,:,i)'))
+% %     imagesc(squeeze(test_norm(:,:,i)'))
 %     colorbar
 % end
 % [a,b] = max((test_norm-test_bs),[],3);
@@ -121,7 +125,7 @@ end
 % peakVar = var(reshape(test_norm(:,:,maxT),1,nX*nY));
 % noiseVar = mean(var(reshape(test_norm(:,:,21:end),5,nX*nY),0,2));
 % SNR(4) = peakVar/noiseVar;
-% 
+
 
 % % find peak response for each subfield and each light condition
 % % psth_bls = psth - repmat(psth(1,:),size(psth,1),1);
@@ -171,10 +175,44 @@ for n = 1:size(psth_norm,2)/(nX*nY)
     [U,S,V] = svd(psth_norm(:,(n-1)*(nX*nY)+1:n*nX*nY)','econ');    
     rfMapVec{n} = U(:,1);
     timeCourse{n} = V(:,1)';
+    Scalar(n) = S(1,1);
+    sings = S(find(S)); % singular values
+    relVar = (sings.^2)./sum(sings.^2);
+    if length(relVar)<size(S,1)
+        relVar(length(relVar)+1:size(S,1)) = nan;  % in case there aren't enought singular values (I think only happens for bad units, but do this just so script doesn't error out...)
+    end
     peakTimePoint(n) = find(abs(timeCourse{n})==max(abs(timeCourse{n})),1);    
     ts(n) = sign(timeCourse{n}(peakTimePoint(n)));
+    timecoursePeak = max(ts(n)*timeCourse{n}(1:15)) > ts(n)*mean(timeCourse{n}(1:3))+5*std(timeCourse{n}(1:3));
+    
+    % check if first component is best one to use for RF
+    whichmap(n) = 1;
+    if n>2 && (relVar(2)>.1 || whichmap(rem(n,2)==rem(1:2,2))==2) % for light conds: if there's also a good second component, OR this was the case for the corresponding nolight condition
+        corrs = nan(1,length(relVar));
+        for i=1:sum(relVar>.1)
+            corrmat = corrcoef(rfMapVec{rem(n,2)==rem(1:2,2)},U(:,i));
+            corrs(i) = corrmat(1,2);
+        end
+        [~,whichmap(n)] = max(abs(corrs));  % find which good map is most similar to nolight cond map
+    elseif relVar(2)>.1 && ~timecoursePeak % for nolight conds: if there's also a good second component but no peak timepoint in first component
+        peak2TimePoint = find(abs(V(:,2))==max(abs(V(:,2))),1);
+        ts2 = sign(V(peak2TimePoint,2));
+        if max(ts2*V(1:15,2)) > ts2*mean(V(1:3,2))+5*std(V(1:3,2))  % first component didn't have a peak, but second does! 
+            whichmap(n) = 2;
+        end
+    end
+    if whichmap(n)>1
+        rfMapVec{n} = U(:,whichmap(n));
+        timeCourse{n} = V(:,whichmap(n))';
+        Scalar(n) = S(whichmap(n),whichmap(n));
+        peakTimePoint(n) = find(abs(V(:,whichmap(n)))==max(abs(V(:,whichmap(n)))),1);
+        ts(n) = sign(V(peakTimePoint(n),whichmap(n)));
+        timecoursePeak = max(ts(n)*timeCourse{n}(1:15)) > ts(n)*mean(timeCourse{n}(1:3))+5*std(timeCourse{n}(1:3));
+    end
+
     if n>2 
-        if sign(timeCourse{n}(peakTimePoint(n-2))) < 0  || (ts(n) < 0 && ts(n-2) > 0) % matches sign flip with no light condition
+%         if sign(timeCourse{n-2}(peakTimePoint(n-2))) ~= sign(ts(n)) % matches sign flip with no light condition
+        if sign(timeCourse{rem(n,2)==rem(1:2,2)}(peakTimePoint(rem(n,2)==rem(1:2,2)))) ~= sign(timeCourse{n}(peakTimePoint(rem(n,2)==rem(1:2,2)))) 
             rfMapVec{n} = -rfMapVec{n};
             timeCourse{n} = -timeCourse{n};
         end            
@@ -183,20 +221,27 @@ for n = 1:size(psth_norm,2)/(nX*nY)
         timeCourse{n} = -timeCourse{n};
     end
     rfMap{n} = reshape(rfMapVec{n},nX, nY);
-    Scalar(n) = S(1,1);
     Model((n-1)*(nX*nY)+1:n*nX*nY,:) = rfMapVec{n}*timeCourse{n}*Scalar(n) + baseline(n);
 %     Model((n-1)*(nX*nY)+1:n*nX*nY,:) = rfMapVec{n}*timeCourse{n}*Scalar(n);
     stats.timeCourse{n} = timeCourse{n};
+    stats.relVar{n} = relVar(whichmap(n));
+    stats.whichmap(n) = whichmap(n);
     maxZ(n) = (max(rfMap{n}(:))-mean(rfMap{n}(:)))./std(rfMap{n}(:));
     minZ(n) = (min(rfMap{n}(:))-mean(rfMap{n}(:)))./std(rfMap{n}(:));
     stats.peakZscore(n) = max(abs([minZ(n) maxZ(n)]));
+%     if max(timeCourse{n}(:)) > mean(timeCourse{n}(1:3))+3*std(timeCourse{n}) % if peak of time course is >3STDs above baseline (baseline = mean of first 3 bins i.e. 30ms)
+    if timecoursePeak && relVar(whichmap(n))>.1 % if peak of time course is >5STDs above baseline (baseline = mean of first 3 bins i.e. 30ms) AND has to explain at least 10% of variance
+        stats.issig(n) = 1;
+    else
+        stats.issig(n) = 0;
+    end
     
 end
 Residual = psth_norm' - Model;
 
-
-
-% % % test if RF is significant (chi-squared test of independence across
+% 
+% 
+% %% test if RF is significant (chi-squared test of independence across
 % % % neighboring pixels of peak)
 % for i=1:size(psth_norm,2)/(nX*nY)
 %     tmp_psth = psth_norm(:,(i-1)*(nX*nY)+1:i*nX*nY);
@@ -251,7 +296,8 @@ Residual = psth_norm' - Model;
 %             [~, ~,pval,~] = crosstab(neighb_psth{:});
 %         end
 %     end
-%     if pval < .05
+% %     if pval < .05
+%     if pval < .01
 %         stats.issig(i) = 1;
 %     else
 %         stats.issig(i) = 0;
@@ -261,69 +307,97 @@ Residual = psth_norm' - Model;
 % 
 
 %% Trying new thing - look at variance across X and Y dimensions of calculated spatial filter and compare that against "shuffled" spatial filters
-for i=1:length(rfMap)
-    varY = var(rfMap{i},0,2); % get the variance across Y values for every X
-    varX = var(rfMap{i},0,1); % get the variance across X values for every Y
-    [peakVarY,whereVarY] = max(varY); % get X coordinate and value with maximum variance in Y
-    [peakVarX,whereVarX] = max(varX); % get Y coordinate and value with maximum variance in X
-    shufmat = zeros(nX,nY,1000);
-    for n=1:1000
-        tmp =randperm(numel(rfMap{i}));
-        shufmat(:,:,n) = reshape(tmp,size(rfMap{i}));   % shuffle the spatial filter values across positions in nX by nY grid
-    end
-    shufvarY = squeeze(var(shufmat,0,2)); % get the variance across Y values for every X in every shuffle
-    shufvarX = squeeze(var(shufmat,0,1)); % get the variance across X values for every Y in every shuffle
-    shufSNR_Y = zeros(1,1000);
-    if whereVarY>nX/2   % if peak in Y variances is in right half of grid
-        spSNR_Y = peakVarY/mean(varY(1:2));   % get ratio of the peak Y variance to the mean of Y variances in first two columns (aka "spatial SNR")    
-    else
-        spSNR_Y = peakVarY/mean(varY(nX-1:nX));  % if the peak in Y variances is in the left half of the grid, get ratio of peak Y variance to the mean of Y variances in last two columns
-    end
-    [shufpeaksY,wherepeaksY] = max(shufvarY);   % get peak of Y variance for each shuffle
-    shufSNR_Y(wherepeaksY>nX/2) = shufpeaksY(wherepeaksY>nX/2)./mean(shufvarY(1:2,wherepeaksY>nX/2)); % get same SNR val from every shuffle to get a null distribution of SNRs (using max variance from each shuffle)
-    shufSNR_Y(wherepeaksY<=nX/2) = shufpeaksY(wherepeaksY<=nX/2)./mean(shufvarY(nX-1:nX,wherepeaksY<=nX/2));
-    
-    shufSNR_X = zeros(1,1000);
-    if whereVarX>nY/2   % if peak in X variances is in lower half of grid
-        spSNR_X = peakVarX/mean(varX(1:2));   % get ratio of the peak X variance to the mean of X variances in first two rows (aka "spatial SNR")    
-    else
-        spSNR_X = peakVarX/mean(varX(nY-1:nY));  % if the peak in X variances is in the upper half of the grid, get ratio of peak X variance to the mean of X variances in last two rows
-    end
-    [shufpeaksX,wherepeaksX] = max(shufvarX);   % get peak of X variance for each shuffle
-    shufSNR_X(wherepeaksX>nY/2) = shufpeaksX(wherepeaksX>nY/2)./mean(shufvarX(1:2,wherepeaksX>nY/2)); % get same SNR val from every shuffle to get a null distribution of SNRs (using max variance from each shuffle)
-    shufSNR_X(wherepeaksX<=nY/2) = shufpeaksX(wherepeaksX<=nY/2)./mean(shufvarX(nY-1:nY,wherepeaksX<=nY/2));
-    
-    probSigSNR_Y(i) = sum(shufSNR_Y>=spSNR_Y)/1000;
-    probSigSNR_X(i) = sum(shufSNR_X>spSNR_X)/1000;
-    
-    if probSigSNR_Y(i) < .01 && probSigSNR_X(i) < .01 % consider it a significant receptive field if there's a significant (<.01) spatial SNR in BOTH x and y dimensions
-        stats.issig2(i) = 1;
+for i=1:length(rfMap) % if either peak was significant
+%     if stats.issig(rem(i,2)==rem(1:2,2))
+    if stats.issig(i)
+        varY = var(rfMap{i},0,2); % get the variance across Y values for every X
+        varX = var(rfMap{i},0,1); % get the variance across X values for every Y
+        [peakVarY,whereVarY] = max(varY); % get X coordinate and value with maximum variance in Y
+        [peakVarX,whereVarX] = max(varX); % get Y coordinate and value with maximum variance in X
+        shufmat = zeros(nX,nY,1000);
+        for n=1:1000
+            tmp =randperm(numel(rfMap{i}));
+            shufmat(:,:,n) = reshape(rfMap{i}(tmp),size(rfMap{i}));   % shuffle the spatial filter values across positions in nX by nY grid
+        end
+        shufvarY = squeeze(var(shufmat,0,2)); % get the variance across Y values for every X in every shuffle
+        shufvarX = squeeze(var(shufmat,0,1)); % get the variance across X values for every Y in every shuffle
+        shufSNR_Y = zeros(1,1000);
+        if whereVarY>nX/2   % if peak in Y variances is in right half of grid
+            spSNR_Y = peakVarY/mean(varY(1:2));   % get ratio of the peak Y variance to the mean of Y variances in first two columns (aka "spatial SNR")    
+        else
+            spSNR_Y = peakVarY/mean(varY(nX-1:nX));  % if the peak in Y variances is in the left half of the grid, get ratio of peak Y variance to the mean of Y variances in last two columns
+        end
+        [shufpeaksY,wherepeaksY] = max(shufvarY);   % get peak of Y variance for each shuffle
+        shufSNR_Y(wherepeaksY>nX/2) = shufpeaksY(wherepeaksY>nX/2)./mean(shufvarY(1:2,wherepeaksY>nX/2)); % get same SNR val from every shuffle to get a null distribution of SNRs (using max variance from each shuffle)
+        shufSNR_Y(wherepeaksY<=nX/2) = shufpeaksY(wherepeaksY<=nX/2)./mean(shufvarY(nX-1:nX,wherepeaksY<=nX/2));
+
+        shufSNR_X = zeros(1,1000);
+        if whereVarX>nY/2   % if peak in X variances is in lower half of grid
+            spSNR_X = peakVarX/mean(varX(1:2));   % get ratio of the peak X variance to the mean of X variances in first two rows (aka "spatial SNR")    
+        else
+            spSNR_X = peakVarX/mean(varX(nY-1:nY));  % if the peak in X variances is in the upper half of the grid, get ratio of peak X variance to the mean of X variances in last two rows
+        end
+        [shufpeaksX,wherepeaksX] = max(shufvarX);   % get peak of X variance for each shuffle
+        shufSNR_X(wherepeaksX>nY/2) = shufpeaksX(wherepeaksX>nY/2)./mean(shufvarX(1:2,wherepeaksX>nY/2)); % get same SNR val from every shuffle to get a null distribution of SNRs (using max variance from each shuffle)
+        shufSNR_X(wherepeaksX<=nY/2) = shufpeaksX(wherepeaksX<=nY/2)./mean(shufvarX(nY-1:nY,wherepeaksX<=nY/2));
+
+        probSigSNR_Y(i) = sum(shufSNR_Y>=spSNR_Y)/1000;
+        probSigSNR_X(i) = sum(shufSNR_X>spSNR_X)/1000;
+
+        if probSigSNR_Y(i) < .025 || probSigSNR_X(i) < .025 % consider it a significant receptive field if there's a significant (<.01 - strict cutoff) spatial SNR in x or y dimensions
+    %     if probSigSNR_Y(i) < .05 && probSigSNR_X(i) < .05 % consider it a significant receptive field if spatial SNRs in both dimensions are significant (<.05)
+            stats.issig2(i) = 1;
+        else
+            if max(stats.peakZscore(i)) > 5  % changed from 6 11/8/20
+                stats.issig2(i) = 1;
+            else
+                stats.issig2(i) = 0;
+            end
+        end
+    %     subplot(4,nCol,3*nCol+i);
+    %     title(sprintf('%s map, peakZ = %.2f, sig = %d', key_leg{i}, stats.peakZscore(i),stats.issig(i)));
     else
         stats.issig2(i) = 0;
     end
-%     subplot(4,nCol,3*nCol+i);
-%     title(sprintf('%s map, peakZ = %.2f, sig = %d', key_leg{i}, stats.peakZscore(i),stats.issig(i)));
-
 end
 
 %% make null distributions for statistical comparison
-if find(stats.issig2)      % only do it if any statistically sig RFs were identified (because this takes time)
-    tic
-    reps = 1000;
-    for i=1:size(psth_norm,2)/(nX*nY)       % new 7/9/19 - use trials specific to each condition to generate null distribution for that condition (e.g., black square, light off)
+% add max z score contingency because really small RFs are unlikely to
+% cross SNR significance threshold (new - 5/11/20)
+tic
+reps = 500;     % changed from 1000 5/11/20
+which_conds = 1:size(psth_norm,2)/(nX*nY);
+for i=1:size(psth_norm,2)/(nX*nY)       % new 7/9/19 - use trials specific to each condition to generate null distribution for that condition (e.g., black square, light off)
+%     if sum(stats.issig(rem(i,2)==rem(which_conds,2))>=1)  || sum(stats.issig2(rem(i,2)==rem(which_conds,2))>=1) || max(stats.peakZscore(rem(i,2)==rem(which_conds,2))>6)    % include  chisquared test results
+%     if sum(stats.issig2(rem(i,2)==rem(which_conds,2))>=1) ||  max(stats.peakZscore(rem(i,2)==rem(which_conds,2))>6)    % only do it if any statistically sig RFs were identified (because this takes time) - changed 5/13 to only do for sig subfields, but in opto exp, if one light cond came up sig, do for other one two
+%     if stats.issig2(rem(i,2)==rem(1:2,2))
+    if stats.issig2(i) || (sum(stats.issig2(rem(i,2)==rem(which_conds,2)))>=length(which_conds)/4 && stats.issig(i))  % do if sig spatial SNR, OR if it had a significant timecourse and at least half of other lightconds (same subunit, hence /4) had significant spatial SNR  - to enable comparison between conditions
+% ^ 10/13 - added back in chi square test, and also do this if that test comes out significant
         rfMap_shuf = nan(nX,nY,reps);
         nshufstim = num_stim/(length(lconds)*nBW);
-%         trial_mat = repmat(1:nshufstim,1,length(which_trials)/nshufstim); % combining all bw and light conditions        
-        trial_mat = repmat(1+(i-1)*nshufstim:i*nshufstim,1,length(which_trials)/num_stim);    % separately for each bw and light condition
-        which_trials = stim_trials(:,3)==stim_key(i*nshufstim,3)&(stim_trials(:,4)==stim_key(i*nshufstim,4));
+    %         trial_mat = repmat(1:nshufstim,1,length(which_trials)/nshufstim); % combining all bw and light conditions        
+%         trial_mat = repmat(1+(i-1)*nshufstim:i*nshufstim,1,size(spike_raster,2)/num_stim);    % separately for each bw and light condition
+        which_trials = zeros(1,size(spike_raster,2));
+%         which_stim =
+%         stim_trials(:,3)==stim_key(i*nshufstim,3)&(stim_trials(:,4)==stim_key(i*nshufstim,4)); % shuffling across trials of same LED AND luminance conditions
+        which_stim = (stim_trials(:,4)==stim_key(i*nshufstim,4)); % shuffling across trials of same LED condition
+        which_trials(stim_trials(which_stim,5))=1;
+        which_trials = logical(which_trials);   
+%         trial_mat = unique(stim_trials(which_stim,5));   % new 6/10/20
+        find_stim = find(which_stim);   % get trial indices
+        trial_mat = nan(1,nshufstim); % defines the x and ypos for each trial with nth bw and LED condition
+        for x=1:length(find_stim)  % couldn't figure out how to do without for loop if trial numbers aren't quite equal across conditions...(MAK 9/14/20)
+            trial_mat(x) = find((stim_key(1+(i-1)*nshufstim:i*nshufstim,1) == stim_trials(find_stim(x),1))&(stim_key(1+(i-1)*nshufstim:i*nshufstim,2) == stim_trials(find_stim(x),2))); % new MAK 9/14/20)
+        end
         for ii = 1:reps
-            shuf_trials = trial_mat(randperm(length(trial_mat)));    % randomly assign each stim presentation to one of nX*nY stimulus conditions
-            [psth_shuf,~] = make_psth_v2(binsize/1000,[0:binsize:T]./1000,1:length(trial_mat),spike_raster(:,which_trials)',shuf_trials);
-            shutf_t = nan(size(psth_shuf));
-            for tt = 1:size(psth_shuf,1)    % NEW 7/20/19 - also shuffle in time
-                shuf_t(tt,:) = randperm(size(psth_shuf,2));     % shuffle time bin indices for each stim rep
-            end
-            psth_shuf = psth_shuf(shuf_t);
+            shuf_trials = trial_mat(randperm(length(trial_mat)));    % randomly assign each stim presentation to one of nX*nY stimulus conditions AND shuffle time points (MAK 1/6/20)
+            [psth_shuf,~] = make_psth_v2(binsize/1000,[0:binsize:T]./1000,1:sum(which_trials),spike_raster(randperm(size(spike_raster,1)),which_trials)',shuf_trials); %also shuffles in time **important when RFs are very large
+%             [psth_shuf,~] = make_psth_v2(binsize/1000,[0:binsize:T]./1000,1:sum(which_trials),spike_raster(:,which_trials)',shuf_trials);
+    %             shutf_t = nan(size(psth_shuf));
+    %             for tt = 1:size(psth_shuf,1)    % NEW 7/20/19 - also shuffle in time
+    %                 shuf_t(tt,:) = randperm(size(psth_shuf,2));     % shuffle time bin indices for each stim rep
+    %             end
+    %             psth_shuf = psth_shuf(shuf_t);
             bs = mean(mean(psth_shuf(:,1:2)));    % same as above - baseline is mean of first 20ms
     %         psth_shuf = psth_shuf(:,3:end) - bs;
             psth_shuf = psth_shuf - bs;
@@ -331,7 +405,7 @@ if find(stats.issig2)      % only do it if any statistically sig RFs were identi
             rfMapVec_shuf = Ushuf(:,1);
             rfMap_shuf(:,:,ii) = reshape(rfMapVec_shuf,nX, nY);
         end
-% make_psth_v2(binsize/1000,[0:binsize:T]./1000,which_trials',spike_raster',ones(1,length(which_trials)));
+    % make_psth_v2(binsize/1000,[0:binsize:T]./1000,which_trials',spike_raster',ones(1,length(which_trials)));
         pvals{i} = zeros(size(rfMap{i}));
         for xx = 1:nX
             for yy = 1:nY
@@ -344,52 +418,48 @@ if find(stats.issig2)      % only do it if any statistically sig RFs were identi
         end
     %     pvals{i}(abs(pvals{i})>=.05/(nX*nY)) = nan;   % because two-sided test. do I need a multiple comparisons correction?
         [sort_pvals,~] = sort(abs(pvals{i}(:)));      % treat all pvals as +
-%         testp = zeros(1,length(sort_pvals));
-        
-        % get ranks, accounting for repetitions
-        idxRepeat = [false; diff(sort_pvals)==0];        
-        rnk = 1:numel(sort_pvals);
-        loopidx=find(idxRepeat>0);
-        for w=1:numel(loopidx)
-            ii = loopidx(w);
-            rnk(ii)=rnk(ii-1);
-        end
-        
-%         for k=1:length(sort_pvals)
-%             testp(k) =  sort_pvals(k)<=(rnk(k)/(nX*nY))*.1;      % Benjamini-Hochberg FDR correction for multiple comparisons (false discovery rate set to 10%)
-%         end
-        imq = rnk./(nX*nY)*.1;
-        max_p = sort_pvals(find(sort_pvals<imq',1,'last'));
-%         max_p = max(abs(pvals_ord(find(testp))));
-        if isempty(max_p)
-            max_p = 0;
-        end
-        pvals{i}(abs(pvals{i})>max_p) = nan; 
-        stats.pvals{i} = pvals{i};
+    %         testp = zeros(1,length(sort_pvals));
 
-        if sum(~isnan(pvals{i}(:)))
-            stats.issig(i) = 1;
+    % Benjamini-Hochberg FDR correction for multiple comparisons (false discovery rate set to 25%)
+%         rnk = 1:numel(sort_pvals);
+%         imq = rnk./(nX*nY)*.25;
+%         max_p = sort_pvals(find(sort_pvals<imq',1,'last'));
+%     %         max_p = max(abs(pvals_ord(find(testp))));
+%         if isempty(max_p)
+%             max_p = 0;
+%         end
+        [h, max_p] = fdr_bh(sort_pvals, .2); % 10% false discovery rate
+        if sum(h)
+            pvals{i}(abs(pvals{i})>max_p) = nan; 
+            stats.issig3(i) = 1;
         else
-            stats.issig(i) = 0;
+            pvals{i} = nan(size(pvals{i}));
+            stats.issig3(i) = 0;
         end
-    end
-    toc
-else
-    for i=1:4
+        stats.pvals{i} = pvals{i};
+        
+    else % if no sig RF detected for on/off responses
         stats.pvals{i} = nan(size(rfMap{1}));
-        stats.issig(i) = 0;
+        stats.issig3(i) = 0;
     end
+toc
+
 end
 
 %%
 figure;
 timeBins = 0:binsize:T;
 timeBins = timeBins(1:end-1)+binsize/2;
-nCol = 4;
-nRow = 5;
+nCol = length(rfMap);
+nRow = 4;
 % timeBins=timeBins(3:end);       %TEMP
 
-key_leg = {'OFF subunit, light OFF', 'ON subunit, light OFF', 'OFF subunit, light ON', 'ON subunit, light ON'};
+if length(rfMap)<=4 
+    key_leg = {'OFF subunit, light OFF', 'ON subunit, light OFF', 'OFF subunit, light ON', 'ON subunit, light ON'};
+else
+    key_leg = {'OFF subunit, LED OFF', 'ON subunit, LED OFF', 'OFF subunit, LED1 ON', 'ON subunit, LED1 ON', 'OFF subunit, LED2 ON', 'ON subunit, LED2 ON', 'OFF subunit, LEDs1&2 ON', 'ON subunit, LEDs1&2 ON'};
+end
+leg_ax = [min(cellfun(@(x) min(x(:)),rfMap,'uniformoutput',1)) max(cellfun(@(x) max(x(:)),rfMap,'uniformoutput',1))];
 for n = 1:size(psth_norm,2)/(nX*nY)
     
     subplot(nRow,nCol,n);
@@ -409,28 +479,34 @@ for n = 1:size(psth_norm,2)/(nX*nY)
     xlabel('space')
     ylabel('time')
     
-    subplot(nRow,nCol,2*nCol+n); 
-    imagesc(Residual((n-1)*(nX*nY)+1:n*nX*nY,:)');
-    %         cax = caxis();
-    %         caxis(max(abs(cax))*[-1 1]);     
-    %         axis image
-    colorbar
-    title(sprintf('residual - %s',key_leg{n}))
-    xlabel('space')
-    ylabel('time')
+%     subplot(nRow,nCol,2*nCol+n); 
+%     imagesc(Residual((n-1)*(nX*nY)+1:n*nX*nY,:)');
+%     %         cax = caxis();
+%     %         caxis(max(abs(cax))*[-1 1]);     
+%     %         axis image
+%     colorbar
+%     title(sprintf('residual - %s',key_leg{n}))
+%     xlabel('space')
+%     ylabel('time')
     
-    subplot(nRow,nCol,3*nCol+n);
+    subplot(nRow,nCol,2*nCol+n);
     imagesc(1:nX, 1:nY, rfMap{n}(:,:)');
     axis image
+%     caxis(leg_ax)
     colorbar
     title(sprintf('%s map, peakZ = %.2f', key_leg{n}, stats.peakZscore(n)));
     
-    subplot(nRow,nCol,4*nCol+n)
+    subplot(nRow,nCol,3*nCol+n)
+%     zmap = transpose(rfMap{n}-mean(rfMap{n}(:)))./std(rfMap{n}(:));
+%     zmap(abs(zmap)<2)= nan;
+%     imagesc(zmap)
+%     title(sprintf('%s Zmap thresh (issig = %.2f)',key_leg{n},stats.issig2(n)));
     imagesc(1:nX,1:nY,stats.pvals{n}');
     axis image
     caxis([-.05 .05])
     colorbar
     title(sprintf('%s RF sig map (issig = %.2f)',key_leg{n},stats.issig2(n)));
+
 end
 
 

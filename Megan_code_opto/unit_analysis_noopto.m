@@ -1,4 +1,4 @@
-function [unitinfo,FRs,tuning,waveforms] = unit_analysis_opto(unit,field_trials,unit_times,params,rez,normalizing,makeplots,fig_dir)
+function [unitinfo,FRs,tuning,waveforms] = unit_analysis_noopto(unit,field_trials,unit_times,params,rez,normalizing,makeplots,fig_dir)
 
 % modified from intan_unit_analysis.m by MAK on 8/8/2017. 
 % modified to be more efficient and to postpone most stats until later
@@ -51,11 +51,14 @@ stimtime_ms = params.stimtime*1000;
 poststim_ms = params.poststim*1000;
 total_time_ms = prestim_ms+stimtime_ms+poststim_ms;
 onset_ms = params.onset*1000;               % amount of time from start of visual stimulus considered "onset"
-all_light = params.all_light;
-pulse_dur = params.pulse_dur(find(params.pulse_dur))*1000;       % duration of light pulse in ms (only different from lighttime during trains experiments
-light_dur = params.light_dur(find(params.light_dur))*1000;       % duration of light pulse in ms (only different from lighttime during trains experiments
-lighttime = params.lighttime*1000;       % duration of light stimulation in ms(e.g. 1sec)
-av_light_start = params.av_light_start*1000;     % average time the light turned on across trials (in ms)
+
+%% set up fake "light" params to make code work for non-opto experiments (temp...)
+all_light = zeros(1,size(field_trials,1));
+lighttime = 1000;   % TEMP - manually set to 1s analysis window (light isn't actually on...)
+params.lighttime = 1; % TEMP - manually set to 1s analysis window (light isn't actually on...)
+params.av_light_start = [];
+params.pulse_dur = [];
+params.light_dur = [];
 
 %% extract spike times 
 unit_times_ds = floor(unit_times./(amp_sr/1000));   % change sample #s to account for downsampling
@@ -65,14 +68,9 @@ spike_raster = make_raster(unit_times_ds,field_trials,1000,total_time_ms/1000); 
 %% count spikes during periods of interest
 disp('Counting spikes...')
 num_trials = size(field_trials,1);
-window = round([max(av_light_start)+1 max(av_light_start)+lighttime]); % analyze common time window b/w light conditions w/ diff start times
-if max(av_light_start) < prestim_ms+2       % +2 for cases when light started at same time as visstim
-    window = [prestim_ms+251 window(end)];  % changed 1/7/21 from [1001 window(end)] to be more consistent b/w exps where I used 1 vs 2 starttimes
-end
-if window(end) > size(spike_raster,2)   
-    window(end) = size(spike_raster,2);
-end
-ev_lighttime = diff(window)/1000;
+% window = round([2*prestim_ms+1 2*prestim_ms+1000]); % TEMP: set analysis time window to [1001:2000]
+window = [prestim_ms+251 prestim_ms+stimtime_ms-250];   % 1/14/21 - set to match inact experiments
+ev_lighttime = (diff(window)+1)/1000;
 
 spikes_prestim = sum(spike_raster(:,1:prestim_ms),2);
 spikes_ev = sum(spike_raster(:,window(1):window(2)),2);
@@ -151,7 +149,7 @@ for lc = 1:length(lightconds)
             run_trials = find(trial_type(:,runvar) == runconds(r));
 %             [spikerate_bycond(o,lc,r), spikerateSE_bycond(o,lc,r)] = calc_firing_rates(spikes_ev_half',intersect(intersect(lc_trials{lc},oricond_trials),run_trials),params.lighttime/2);   % currently using FIRST HALF of light period
               [spikerate_bycond(o,lc,r), spikerateSE_bycond(o,lc,r)] = calc_firing_rates(spikes_ev(:,1),intersect(intersect(lc_trials{lc},oricond_trials),run_trials),ev_lighttime);   % currently using WHOLE light period
-        end
+      end
     end
 end
 
@@ -425,7 +423,7 @@ if makeplots
         count_plots = count_plots+1;
     end
     
-    % Tuning curves (stationary trials)
+    % Tuning curves (stationary trials, baseline subtracted)
     if plot_ori
         subplot(yy,xx,count_plots)
         vals = [];
@@ -434,7 +432,7 @@ if makeplots
         for lc = 1:length(lightconds)
             shadedErrorBar(oris,tuning_curve(lc,:),spikerateSE_bycond(oriinds,lc,runconds==0),{'Color',color_mat(lc,:),'linewidth',2},1);  % plot ori tuning in NO RUN trials (NOT baseline-subtracted)
             hold on
-            plot(oris,repmat(spikerate_bycond(oriinds==0,lc,runconds==0),length(oris),1),'Color',color_mat(lc,:),'linewidth',1,'linestyle','--');  % plot blank trial FRs for comparison
+%             plot(oris,repmat(spikerate_bycond(oriinds==0,lc,runconds==0),length(oris),1),'Color',color_mat(lc,:),'linewidth',1,'linestyle','--');  % plot blank trial FRs for comparison
 %             if tuned_sig(lc) < .05
 %                 [val,maxori] = max(tuning_curve_norm(lc,:));
 %                 vals = [vals val];
@@ -459,9 +457,8 @@ if makeplots
         subplot(yy,xx,count_plots)
         
          for lc = 1:length(lightconds)
-            shadedErrorBar(SFs,SF_FR(:,lc)',SF_FR_SE(:,lc)',{'Color',color_mat(lc,:),'linewidth',2},1);  % plot ori tuning in NO RUN trials (NOT baseline-subtracted)
+            shadedErrorBar(SFs,SF_FR(:,lc)'-repmat(baseline,1,size(SF_FR,1)),SF_FR_SE(:,lc)',{'Color',color_mat(lc,:),'linewidth',2},1);  % plot ori tuning in NO RUN trials (NOT baseline-subtracted)
             hold on
-             plot(SFs,repmat(spikerate_bycond(oriinds==0,lc,runconds==0),length(SFs),1),'Color',color_mat(lc,:),'linewidth',1,'linestyle','--');  % plot blank trial FRs for comparison
          end
          ylabel('Firing rate (Hz)','FontSize',24)
         xlabel('SF (cpd)','FontSize',24)
@@ -483,10 +480,9 @@ if makeplots
         subplot(yy,xx,count_plots)
         
         for lc = 1:length(lightconds)
-            shadedErrorBar(60./TFs,TF_FR(:,lc)',TF_FR_SE(:,lc)',{'Color',color_mat(lc,:),'linewidth',2},1);  % plot ori tuning in NO RUN trials (NOT baseline-subtracted)
+            shadedErrorBar(60./TFs,TF_FR(:,lc)'-repmat(baseline,1,size(TF_FR,1)),TF_FR_SE(:,lc)',{'Color',color_mat(lc,:),'linewidth',2},1);  % plot ori tuning in NO RUN trials (NOT baseline-subtracted)
             hold on
-             plot(60./TFs,repmat(spikerate_bycond(oriinds==0,lc,runconds==0),length(FRs),1),'Color',color_mat(lc,:),'linewidth',1,'linestyle','--');  % plot blank trial FRs for comparison
-        end
+         end
          ylabel('Firing rate (Hz)','FontSize',24)
         xlabel('TF (Hz)','FontSize',24)
         

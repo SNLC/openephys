@@ -19,7 +19,7 @@ function analysis_master(exp_path,exp_system,exp_type,plots)
 % get name
 out = regexp(exp_path,'\\','split');
 an_name = out{end-1};       % animal name
-if contains(an_name,'LP','ignorecase',1) || contains(an_name,'V1','ignorecase',1) || contains(an_name,'TRN','ignorecase',1)
+if contains(an_name,'LP','ignorecase',1) || contains(an_name,'V1','ignorecase',1) || contains(an_name,'TRN','ignorecase',1) || contains(an_name,'SC','ignorecase',1)
     an_name = strcat(out{end-2},'_',an_name);
 elseif contains(an_name,'day','ignorecase',1) 
     an_name = out{end-2};
@@ -169,7 +169,7 @@ if exist('LED','var')       % if optogenetics experiment
 %     led = light(izx);
     disp('Loading light parameters...')
     if ~exist('light_params.mat','file')
-        [params.all_light,params.pulse_dur,params.lighttime,params.av_light_start] = get_lightstim_v2(exp_path,exp_type);   
+        [params.all_light,params.pulse_dur,params.lighttime,params.av_light_start] = get_lightstim_v3(exp_path,exp_type);   % changed from v2 9/2/20 MAK
         params.light_dur = params.pulse_dur;
     else
         load('light_params.mat');
@@ -197,14 +197,18 @@ params.amp_sr = amp_sr;
 params.nchs = chansInDat;
 
 %% run unit analysis for each unit in this experiment
-if exist(sprintf('%s/good_units.txt',exp_path),'file')
-    good_units = load(sprintf('%s/good_units.txt',exp_path));   % if you predetermined which clusters to look at
-end
+% if exist(sprintf('%s/good_units.txt',exp_path),'file')
+%     good_units = load(sprintf('%s/good_units.txt',exp_path));   % if you predetermined which clusters to look at
+% end
 
 num_units = length(good_units);
 for i = 1:num_units
     fprintf(sprintf('Performing analysis on %s cluster %s \n',exp_name,num2str(good_units(i))))
-    [unitinfo(i),FRs(i),tuning(i),waveforms(i)] = unit_analysis_opto(good_units(i),field_trials,spike_times(clusters==good_units(i)),params,rez,'blanks',plots,all_fig_dir);
+    if exist('LED','var') 
+        [unitinfo(i),FRs(i),tuning(i),waveforms(i)] = unit_analysis_opto(good_units(i),field_trials,spike_times(clusters==good_units(i)),params,rez,'blanks',plots,all_fig_dir);
+    else
+        [unitinfo(i),FRs(i),tuning(i),waveforms(i)] = unit_analysis_noopto(good_units(i),field_trials,spike_times(clusters==good_units(i)),params,rez,'prestim',plots,all_fig_dir);
+    end
 end
 
 %% evaluate cluster quality

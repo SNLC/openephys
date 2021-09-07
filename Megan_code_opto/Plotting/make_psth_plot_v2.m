@@ -15,6 +15,12 @@ function make_psth_plot_v2(psth,binsize,prestim,stimtime,totaltime,all_light_tri
     
 color_mat = [0 0 0; 0 .8 1; 0 0 1; 0 0.5 .4; 0 .7 .2;0 .8 1; 0 0 1]; % for graphing purposes (first is black, last is green)
 % color_mat = [0 0 0; .9 0 .3; 0.50, 0.0780, 0.10]; % for halo (red)
+% color_mat = [0 0 0; 0 0.5 .4; 0 0.5 0.05];
+% color_mat = [0 0 0; .05 .4 1];
+% color_mat = [0 0 0; .166 .674 .188];   %L6
+% color_mat = [0 0 0; 0 .2 .9];   %L5
+% color_mat = [0 0 0; .85 .325 .098];   % LGN=orange
+% color_mat = [0 0 0; .494 .184 .556];   % LP = purple
 
 edges_stim = [-prestim:binsize:(totaltime-prestim-binsize)]'; % x signifies the timepoint of the START of the bin
 for c = 1:size(psth,1)
@@ -43,9 +49,12 @@ if length(lightconds)>1         % if multiple light conditions
         for c = 1:length(light_start)
             x1 = light_start - prestim;     % when the light starts
             patch_start(c) = edges_stim(find(x1(c)-edges_stim>0,1,'last'));     % in case light doesn't evenly start at the beginning of a bin - start the light patch at the earliest bin with any light in it
+%             xx = [patch_start(c) patch_start(c) patch_start(c)+light_dur(c+sum(lightconds==0)) patch_start(c)+light_dur(c+sum(lightconds==0)) patch_start(c)];
             xx = [patch_start(c) patch_start(c) patch_start(c)+light_dur(c+sum(lightconds==0)) patch_start(c)+light_dur(c+sum(lightconds==0)) patch_start(c)];
             yy = [0 yax(2) yax(2) 0 0];
             patch(xx, yy, -1 * ones(size(xx)), [0.8 0.8 0.9], 'LineStyle', 'none', 'FaceAlpha',.75)
+%              patch(xx, yy, -1 * ones(size(xx)), [.9 0 .3], 'LineStyle', 'none', 'FaceAlpha',.10) %for halo
+
         end
     end
 end

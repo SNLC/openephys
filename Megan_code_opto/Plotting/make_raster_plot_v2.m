@@ -13,6 +13,12 @@ function make_raster_plot_v2(spike_raster,prestim,totaltime,light_trialtypes,lig
 num_trials = size(spike_raster,1);
     color_mat = [0 0 0; 0 .8 1; 0 0 1; 0 0.5 .4; 0 .7 .2; 0 .8 1; 0 0 1]; % for graphing purposes (first is black, last is green)
 % color_mat = [0 0 0; .9 0 .3; 0.50, 0.0780, 0.10]; % for halo (red)
+% color_mat = [0 0 0; 0 0.5 .4; 0 0.5 0.05];
+% color_mat = [0 0 0; 0.05 .4 1];
+% color_mat = [0 0 0; .166 .674 .188];   %L6
+% color_mat = [0 0 0; 0 .2 .9];   %L5
+% color_mat = [0 0 0;.85 .325 .098];   % LGN=orange
+% color_mat = [0 0 0;.494 .184 .556];   % LP = purple
 
 time_vec = linspace(-prestim,totaltime-prestim,size(spike_raster,2));      % for x-axis 
 cond_colors = ones(1,num_trials);      % just in case you have multiple conditions
@@ -43,12 +49,16 @@ if find(light_trialtypes)         % it was an opto experiment if there's more th
             end
         elseif diff_conds(c)         % any other light condition
             patch([x1(c-sum(diff_conds==0)) x1(c-sum(diff_conds==0)) x1(c-sum(diff_conds==0))+pulse_dur(c) x1(c-sum(diff_conds==0))+pulse_dur(c) x1(c-sum(diff_conds==0))],[start_patch end_patch end_patch start_patch start_patch], [0.8 0.8 0.9], 'LineStyle', 'none', 'FaceAlpha',.75)
+%             patch([x1(c-sum(diff_conds==0)) x1(c-sum(diff_conds==0)) x1(c-sum(diff_conds==0))+pulse_dur(c) x1(c-sum(diff_conds==0))+pulse_dur(c) x1(c-sum(diff_conds==0))],[start_patch end_patch end_patch start_patch start_patch], [.9 0 .3], 'LineStyle', 'none', 'FaceAlpha',.10) %for halo
         end
         if length(diff_conds)>1
             line([-prestim totaltime-prestim], [end_patch end_patch]','Color','r','LineStyle','--')
         end
     end
     hold on
+else
+    new_spike_rast = spike_raster;      %non-opto experiment
+    new_spike_rast(~new_spike_rast) = nan; 
 end
 
 if exist('xrange','var')        

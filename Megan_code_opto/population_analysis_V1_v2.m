@@ -1,4 +1,4 @@
-function population_analysis_V1(pop,mani)
+function population_analysis_V1_v2(pop,mani)
 % pop = population (e.g., 'L6')
 % mani = manipulation (e.g., 'ChR2')
 
@@ -77,6 +77,34 @@ elseif strcmpi(pop,'L5') && strcmpi(mani,'stGtACR')
         'Y:\L5\stGtACR\NPRSC6\V1\2020-09-02_14-37-11_driftgrat_2LEDs',...
         'Y:\L5\stGtACR\NPRSC8\V1\2020-08-31_16-14-35_driftgrat_2LEDs'};
     shanks = {0,0,0,0,0,0};
+    lightcond = {[1],[1],[1],[1],[2],[2]}; % in case of multiple light conds, which do you want to analyze(1 means first lightcond -excluding no light cond)
+elseif strcmpi(pop,'L6') && strcmpi(mani,'stGtACR')
+    exp_paths = {'Y:\L6\stGtACR\MG1\V1\2020-08-14_13-46-02_driftgrat_2bluepwrs',...
+        'Y:\L6\stGtACR\MG2\V1\2020-08-07_13-59-20_driftgrat_2lightpwrs',...
+        'Y:\L6\stGtACR\MG3\V1\2020-08-25_14-09-10_stGtACR_3lightpwrs'};
+    shanks = {[0 1],0,[0 1]};
+    lightcond = {[2],[2],[3]};
+elseif strcmpi(pop,'L5&6') && strcmpi(mani,'2LEDs')
+    exp_paths = {'Y:\L5&L6\DM2\V1\2020-10-12_17-27-26_driftgrat_2LEDs',...
+        'Y:\L5&L6\DM3\V1-pen1\2020-10-14_15-16-53_driftgrat_2LEDs',...
+        'Y:\L5&L6\DM3\V1-pen2\2020-10-14_20-12-02_driftgrat_2LEDs'};
+    shanks = {[0 1], [0 1], [0 1]};
+    lightcond = {[1:3], [1:3], [1:3]}; 
+elseif strcmpi(pop,'V1') && strcmpi(mani,'PVChR2')
+    exp_paths = {'I:\OldExperiments\VH3\V1\2018-05-17_13-45-22_V1_PVChR2_take2'};
+    shanks = {[0]};
+    lightcond = {[2]};
+elseif strcmpi(pop,'V1') && strcmpi(mani,'DlxChR2')
+    exp_paths = {'Y:\V1Inactivation\VSC3\V1\2020-06-04_12-22-21_HaloChR2',...
+        'Y:\V1Inactivation\VSC4\V1\2020-06-04_20-16-50_HaloChR2'};
+    shanks = {[0],0};
+    lightcond = {[1],[1]};
+elseif strcmpi(pop,'V1') && strcmpi(mani,'Ai32')
+    exp_paths = {'Y:\V1Inactivation\VSC5\V1\2020-07-28_14-55-27_driftgrat_2LEDs',...
+        'Y:\V1Inactivation\VSC6\V1\2020-07-29_18-25-56_driftgrat_2LEDs',...
+        'Y:\V1Inactivation\VES3\V1\2020-05-07_15-47-43_ChR2_2LEDs'};
+    shanks = {[0],0,0};
+    lightcond = {[1],[1],[1]};
 end
 
 main_dir = 'H:\LPproject\LPresults';
@@ -85,7 +113,7 @@ if ~exist(main_dir,'dir')
 end
 cd(main_dir)
 
-fig_dir =  sprintf('%s\\LPresults\\%s_%s_%s_figs',main_dir,pop,mani);
+fig_dir =  sprintf('%s\\%s_%s_figs',main_dir,pop,mani);
 if ~exist(fig_dir,'dir')
     mkdir(fig_dir)
 end
@@ -109,10 +137,10 @@ for i = 1:length(exp_paths)
     % get experiment name
     out = regexp(exp_path,'\\','split');
     an_name = out{end-1};       % animal name
-    if strcmpi(an_name,'LP') || strcmpi(an_name,'V1')
+    if contains(an_name,'LP','ignorecase',1) || contains(an_name,'V1','ignorecase',1)
         an_name = strcat(out{end-2},'_',an_name);
-    elseif contains(an_name,'day','ignorecase',1) || contains(an_name,'pen','ignorecase',1)
-        an_name = out{end-2};
+%     elseif contains(an_name,'day','ignorecase',1) || contains(an_name,'pen','ignorecase',1)
+%         an_name = out{end-2};
     end
     if ~isempty(strfind(out{end},'shank'))      % if exp_path is a shank subdirectory w/in experimental folder
         inds = regexp(out{end-1},'_\d','start');  % looks for what's before an underscore followed immediately by a number; uses that as exp_name
@@ -304,6 +332,7 @@ good_uQ = find(uQ>16);       % only include units with <25% contamination "false
 clean_units = intersect(good_SNR,good_uQ); 
 % clean_units = 1:length(unitinfo);
 
+% NEED TO CHECK
 window = [round(max(params(exp_num(1)).av_light_start)*1000)+1 round((max(params(exp_num(1)).av_light_start)+params(exp_num(1)).lighttime)*1000)]; % analyze common time window b/w light conditions w/ diff start times (assuming all experiments being analyzed had same parameters)
 if max(params(exp_num(1)).av_light_start) < params(exp_num(1)).prestim
     window = [1001 window(end)];
@@ -312,15 +341,21 @@ ev_lighttime = diff(window)/1000;
 
 % organize firing rates (moved up from line 450 2/10/20)
 FRb = [FRs(clean_units).baseline];  %  baseline (from blank trials w/ no running, light or vis stim)
-numconds = arrayfun(@(x) length(unique(x.all_light)),params,'uniformoutput',1);     % number of light conds in each experiment
-conds = 1:min(numconds)-1;
-FRev = reshape(cell2mat(arrayfun(@(x) x.visual.ev(1,[conds end]), FRs(clean_units),'uniformoutput',0)),length(conds)+1,length(clean_units))';    %vis-evoked
-FRearly = reshape(cell2mat(arrayfun(@(x) x.visual.evstart(1,[conds end]), FRs(clean_units),'uniformoutput',0)),length(conds)+1,length(clean_units))';   % early evoked period
-FRlate = reshape(cell2mat(arrayfun(@(x) x.visual.evlate(1,[conds end]), FRs(clean_units),'uniformoutput',0)),length(conds)+1,length(clean_units))';  % late evoked period
-FRonset = reshape(cell2mat(arrayfun(@(x) x.visual.evlightonset(1,[conds end]), FRs(clean_units),'uniformoutput',0)),length(conds)+1,length(clean_units))'; % vis-evoked light onset
-FRbl = reshape(cell2mat(arrayfun(@(x) x.blank.ev(1,[conds end]), FRs(clean_units),'uniformoutput',0)),length(conds)+1,length(clean_units))'; % blank, evoked period
-FRvison = reshape(cell2mat(arrayfun(@(x) x.onset(1,[conds end]), FRs(clean_units),'uniformoutput',0)),length(conds)+1,length(clean_units))'; % vis stim onset
-
+numconds = arrayfun(@(x) length(unique(x.all_light)),params,'uniformoutput',1);     % number of light conds in each experiment (including no light)
+count = 0;
+for n = 1:length(params)
+    exp_units = sum(exp_num(clean_units)==n); % number of good units in this experiment
+    FRev(count+1:count+exp_units,:) = reshape(cell2mat(arrayfun(@(x) x.visual.ev(1,[1 lightcond{n}+1]), FRs(clean_units(exp_num(clean_units)==n)),'uniformoutput',0)),length(lightcond{n})+1,exp_units)';    %vis-evoked
+    FRearly(count+1:count+exp_units,:) = reshape(cell2mat(arrayfun(@(x) x.visual.evstart(1,[1 lightcond{n}+1]), FRs(clean_units(exp_num(clean_units)==n)),'uniformoutput',0)),length(lightcond{n})+1,exp_units)';   % early evoked period
+    FRlate(count+1:count+exp_units,:) = reshape(cell2mat(arrayfun(@(x) x.visual.evlate(1,[1 lightcond{n}+1]), FRs(clean_units(exp_num(clean_units)==n)),'uniformoutput',0)),length(lightcond{n})+1,exp_units)';  % late evoked period
+    FRonset(count+1:count+exp_units,:) = reshape(cell2mat(arrayfun(@(x) x.visual.evlightonset(1,[1 lightcond{n}+1]), FRs(clean_units(exp_num(clean_units)==n)),'uniformoutput',0)),length(lightcond{n})+1,exp_units)'; % vis-evoked light onset
+    FRbl(count+1:count+exp_units,:) = reshape(cell2mat(arrayfun(@(x) x.blank.ev(1,[1 lightcond{n}+1]), FRs(clean_units(exp_num(clean_units)==n)),'uniformoutput',0)),length(lightcond{n})+1,exp_units)'; % blank, evoked period
+    FRvison(count+1:count+exp_units,:) = reshape(cell2mat(arrayfun(@(x) x.onset(1,[1 lightcond{n}+1]), FRs(clean_units(exp_num(clean_units)==n)),'uniformoutput',0)),length(lightcond{n})+1,exp_units)'; % vis stim onset
+    count = count + exp_units;
+end
+if count ~= length(clean_units)
+    warning('something happened...')
+end
 % exclude low-firing rate units (NEW - 2/10/20)
 quiet_cells = find(max([FRev FRbl],[],2)<.1);
 clean_units(quiet_cells) = [];
@@ -384,6 +419,8 @@ for i = 1:length(clean_units)      % for each unit
     end
 end
 
+%% get layer and depth info
+layer = [unitinfo(clean_units).layer];
 
 distfromlastch = nan(1,length(clean_units));
 distfromfirstch = distfromlastch;
@@ -414,6 +451,11 @@ for n = 1:length(params)        % for each exp
             end
         end
         lastch(count) = max(vischs);
+        if sum(layer(shk_units{count})<=4) % layer 4 and/or L2/3 detected
+            granch(count) = vischs(find(sort(layer(shk_units{count}))<=4,1,'last'));
+        else
+            granch(count) = vischs(find(sort(layer(shk_units{count}))>5,1,'first'))-1;
+        end
         if lastch < length(Zchan)
             if Zchan(lastch(count))==Zchan(lastch(count)+1)
                 lastch(count) = lastch(count)+1;
@@ -421,6 +463,7 @@ for n = 1:length(params)        % for each exp
         end
         distfromlastch(shk_units{count}) = Zchan(lastch(count))-Zchan([waveforms(clean_units(shk_units{count})).max_ch]);   % negative values are actually good (above last ch)
         distfromfirstch(shk_units{count}) = Zchan(firstch(count))-Zchan([waveforms(clean_units(shk_units{count})).max_ch]); % positive values are below first ch
+        distfromgran(shk_units{count}) = Zchan([waveforms(clean_units(shk_units{count})).max_ch])-Zchan(granch(count));
         count = count+1;
     end
 end
@@ -484,11 +527,15 @@ vismod = (FRev(:,1) - FRb')./(FRev(:,1) + FRb');        % using baseline (from b
 vismod_on = (FRvison(:,1)-FRb')./(FRvison(:,1)+FRb');
 
 % get orientation values for later use
-OSI_CV = reshape(cell2mat(arrayfun(@(x) x.OSI_CV(1,[conds end]), tuning(clean_units),'uniformoutput',0)),length(conds)+1,length(clean_units))'; 
-OSI = reshape(cell2mat(arrayfun(@(x) x.OSI(1,[conds end]), tuning(clean_units),'uniformoutput',0)),length(conds)+1,length(clean_units))'; 
-DSI_CV = reshape(cell2mat(arrayfun(@(x) x.DSI_CV(1,[conds end]), tuning(clean_units),'uniformoutput',0)),length(conds)+1,length(clean_units))'; 
-DSI = reshape(cell2mat(arrayfun(@(x) x.DSI(1,[conds end]), tuning(clean_units),'uniformoutput',0)),length(conds)+1,length(clean_units))'; 
-
+count = 1;
+for n=1:length(params)
+    exp_units = sum(exp_num(clean_units)==n); % number of good units in this experiment
+    OSI_CV(count+1:count+exp_units,:)  = reshape(cell2mat(arrayfun(@(x) x.OSI_CV(1,[1 lightcond{n}+1]), tuning(clean_units(exp_num(clean_units)==n)),'uniformoutput',0)),length(lightcond{n})+1,exp_units)'; 
+    OSI(count+1:count+exp_units,:)  = reshape(cell2mat(arrayfun(@(x) x.OSI(1,[1 lightcond{n}+1]), tuning(clean_units(exp_num(clean_units)==n)),'uniformoutput',0)),length(lightcond{n})+1,exp_units)'; 
+    DSI_CV(count+1:count+exp_units,:)  = reshape(cell2mat(arrayfun(@(x) x.DSI_CV(1,[1 lightcond{n}+1]), tuning(clean_units(exp_num(clean_units)==n)),'uniformoutput',0)),length(lightcond{n})+1,exp_units)'; 
+    DSI(count+1:count+exp_units,:)  = reshape(cell2mat(arrayfun(@(x) x.DSI(1,[1 lightcond{n}+1]), tuning(clean_units(exp_num(clean_units)==n)),'uniformoutput',0)),length(lightcond{n})+1,exp_units)'; 
+    count = count+exp_units;
+end
 
 %% get waveform props
 for i = 1:length(clean_units)
@@ -527,18 +574,6 @@ end
 %     print(gcf, '-dpng',fullfile(fig_dir,'Spike count ratio'))
 % end
 
-%% get layer
-layer = [unitinfo(clean_units).layer];
-
-chs_23 = find(layer == 2.5);
-chs_4 = find(layer == 4);
-chs_5 = find(layer == 5);
-chs_55 = find(layer == 5.5);
-chs_6 = find(layer == 6);
-infgran = [chs_5 chs_55 chs_6];
-
-reg_cells = find(t2p_t>=.475);
-FS_cells = find(t2p_t<.475);
 
 %%
 % SALT test
@@ -562,14 +597,18 @@ for i = 1:length(clean_units)
         saltcond = max(params(exp_num(clean_units(i))).all_light);
     end
 %     evtrials = find(params(exp_num(clean_units(i))).all_light==max(params(exp_num(clean_units(i))).all_light));
-    if contains(mani,'chr2','ignorecase',1)
-        evtrials = find(params(exp_num(clean_units(i))).all_light==saltcond);
-        baseline_rast = unitinfo(clean_units(i)).rast(evtrials,round((params(exp_num(clean_units(i))).av_light_start(1)*1000)/10)*10-259:round((params(exp_num(clean_units(i))).av_light_start(1)*1000)/10)*10-10);        % 250ms time window across all light trials, 259:10ms pre-light onset
-        ev_rast = unitinfo(clean_units(i)).rast(evtrials,round((params(exp_num(clean_units(i))).av_light_start(1)*1000)/10)*10:round((params(exp_num(clean_units(i))).av_light_start(1)*1000)/10)*10-1+250);
-                [saltp(i) saltI(i)] = salt(baseline_rast,ev_rast,1/1000,.01);   % within 10ms window
-                [p_5(i) I_5(i)] = salt(baseline_rast,ev_rast,1/1000,.005);    % within 5ms window
-    end
+%     if contains(mani,'chr2','ignorecase',1)
+%         evtrials = find(params(exp_num(clean_units(i))).all_light==saltcond);
+%         baseline_rast = unitinfo(clean_units(i)).rast(evtrials,round((params(exp_num(clean_units(i))).av_light_start(1)*1000)/10)*10-259:round((params(exp_num(clean_units(i))).av_light_start(1)*1000)/10)*10-10);        % 250ms time window across all light trials, 259:10ms pre-light onset
+%         ev_rast = unitinfo(clean_units(i)).rast(evtrials,round((params(exp_num(clean_units(i))).av_light_start(1)*1000)/10)*10:round((params(exp_num(clean_units(i))).av_light_start(1)*1000)/10)*10-1+250);
+%                 [saltp(i) saltI(i)] = salt(baseline_rast,ev_rast,1/1000,.01);   % within 10ms window
+%                 [p_5(i) I_5(i)] = salt(baseline_rast,ev_rast,1/1000,.005);    % within 5ms window
+%     end
 end
+
+%% RS vs FS
+reg_cells = find(t2p_t>=.475);
+FS_cells = find(t2p_t<.475);
 
 %% trains - paired pulse analysis
 cd(fig_dir)
@@ -767,15 +806,15 @@ end
 
 %% F1/F0 response analysis
 binsize = .01;
-all_psth = nan(length(0:binsize:params(exp_num(clean_units(i))).stimtime-binsize),length(conds)+1,length(clean_units));     % n timebins x num conds x  num units
-Fratio = nan(length(clean_units),length(conds)+1);
+all_psth = nan(length(0:binsize:params(exp_num(clean_units(i))).stimtime-binsize),length(lightcond{1})+1,length(clean_units));     % n timebins x num conds x  num units
+Fratio = nan(length(clean_units),length(lightcond{1})+1);
 for i = 1:length(clean_units)
     all_light = params(exp_num(clean_units(i))).all_light;
     vis_start = params(exp_num(clean_units(i))).prestim*1000;       % in ms
     vis_end = params(exp_num(clean_units(i))).poststim*1000;      % in ms
     which_trials = ismember(1:size(unitinfo(clean_units(i)).rast,1),vis_trials{exp_num(clean_units(i))});
     [~,tmp_psth] = make_psth_v2(binsize,0:binsize:(size(unitinfo(clean_units(i)).rast,2)-vis_start)/1000,which_trials,unitinfo(clean_units(i)).rast(:,vis_start+1:end-vis_end),all_light);
-    all_psth(:,:,i) = tmp_psth([conds end],:)';
+    all_psth(:,:,i) = tmp_psth([1 lightcond{exp_num(clean_units(i))}+1],:)';
     %     pref_psth(:,:,i) = tmp_psth'-FRs(clean_units(i)).psthBlank(:,21:end)';       % subtract baseline!! (baseline from each light cond in order to look at whether light impacts F1/F0 independent of any gain change. does this make sense??)
     % but how should I handle psths with negative values?? (i.e. units
     % suppressed by vis stim)
@@ -791,26 +830,23 @@ durs = [params(:).light_dur];
     dur = min(durs(durs>0));
 % end
 light_times = window;   % start with latest light start time, end after minimum light duration that isn't 0
-FRpref = zeros(length(clean_units),length(lightconds{1}));
+FRpref = zeros(length(clean_units),length(lightcond{1}));
 for i = 1:length(clean_units)
-    for ii = 1:length(lightconds{exp_num(clean_units(i))})
+    for ii = 1:length(lightcond{exp_num(clean_units(i))})
         if ii == 1
             FRpref(i,ii) = mean(sum(unitinfo(clean_units(i)).rast(intersect(prefori_trials{i},nolight_trials{exp_num(clean_units(i))}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
         else
-            FRpref(i,ii) = mean(sum(unitinfo(clean_units(i)).rast(intersect(prefori_trials{i},light_trials{exp_num(clean_units(i))}{ii-1}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
+            FRpref(i,ii) = mean(sum(unitinfo(clean_units(i)).rast(intersect(prefori_trials{i},light_trials{exp_num(clean_units(i))}{lightcond{exp_num(clean_units(i))}(ii)}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
         end
     end
 end
 
 %% get running modulation index (added 4/28/20)
 
-% if experiments have diff # lightconds, resize a few key matrices **STill
-% need to figure out better way of doing this!! currently doing it to match
-% FRev and lightmod matrices - if #lightconds don't match, taking first and
-% last conditions (e.g., if some experiments' lightconds are [0:3], use [0
-% 1 3] - should move to higher up in code!!
+% if experiments have diff # lightconds, resize a few key matrices 
+% NEW 9/28/20 - prespecify light conditions to include
 num_lcs = min(cellfun(@(x) length(x),lightconds,'uniformoutput',1)); % in case diff exps have different # of light conds
-big_exps = find(cellfun(@(x) length(x),lightconds,'uniformoutput',1)>num_lcs);  % which exp_nums have too many light conds
+% big_exps = find(cellfun(@(x) length(x),lightconds,'uniformoutput',1)>num_lcs);  % which exp_nums have too many light conds
 
 FRev_run = zeros(length(clean_units),num_lcs);
 FRev_stat = FRev_run;
@@ -818,25 +854,21 @@ FRbl_run = FRev_run;
 FRbl_stat = FRev_run;
 for i=1:length(clean_units)
     if length(run_trials{exp_num(clean_units(i))})/size(unitinfo(clean_units(i)).rast,1) >=.05 % if at least 5% of trials were running trials
-        for ii = 1:num_lcs
-            lcs = [conds length(lightconds{exp_num(clean_units(i))})];  % which lightconds to look at (assumes you def want to look at last cond!)
-            if ii==1
-               FRev_run(i,ii) = mean(sum(unitinfo(clean_units(i)).rast(intersect(intersect(vis_trials{exp_num(clean_units(i))},nolight_trials{exp_num(clean_units(i))}),run_trials{exp_num(clean_units(i))}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
-               FRev_stat(i,ii) = mean(sum(unitinfo(clean_units(i)).rast(intersect(intersect(vis_trials{exp_num(clean_units(i))},nolight_trials{exp_num(clean_units(i))}),stat_trials{exp_num(clean_units(i))}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
-               FRbl_run(i,ii) = mean(sum(unitinfo(clean_units(i)).rast(intersect(intersect(blank_trials{exp_num(clean_units(i))},nolight_trials{exp_num(clean_units(i))}),run_trials{exp_num(clean_units(i))}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
-               FRbl_stat(i,ii) = mean(sum(unitinfo(clean_units(i)).rast(intersect(intersect(blank_trials{exp_num(clean_units(i))},nolight_trials{exp_num(clean_units(i))}),stat_trials{exp_num(clean_units(i))}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
-            else
-               FRev_run(i,ii) = mean(sum(unitinfo(clean_units(i)).rast(intersect(intersect(vis_trials{exp_num(clean_units(i))},light_trials{exp_num(clean_units(i))}{lcs(ii)-1}),run_trials{exp_num(clean_units(i))}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
-               FRev_stat(i,ii) = mean(sum(unitinfo(clean_units(i)).rast(intersect(intersect(vis_trials{exp_num(clean_units(i))},light_trials{exp_num(clean_units(i))}{lcs(ii)-1}),stat_trials{exp_num(clean_units(i))}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
-               FRbl_run(i,ii) = mean(sum(unitinfo(clean_units(i)).rast(intersect(intersect(blank_trials{exp_num(clean_units(i))},light_trials{exp_num(clean_units(i))}{lcs(ii)-1}),run_trials{exp_num(clean_units(i))}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
-               FRbl_stat(i,ii) = mean(sum(unitinfo(clean_units(i)).rast(intersect(intersect(blank_trials{exp_num(clean_units(i))},light_trials{exp_num(clean_units(i))}{lcs(ii)-1}),stat_trials{exp_num(clean_units(i))}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
-            end
+        FRev_run(i,1) = mean(sum(unitinfo(clean_units(i)).rast(intersect(intersect(vis_trials{exp_num(clean_units(i))},nolight_trials{exp_num(clean_units(i))}),run_trials{exp_num(clean_units(i))}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
+        FRev_stat(i,1) = mean(sum(unitinfo(clean_units(i)).rast(intersect(intersect(vis_trials{exp_num(clean_units(i))},nolight_trials{exp_num(clean_units(i))}),stat_trials{exp_num(clean_units(i))}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
+        FRbl_run(i,1) = mean(sum(unitinfo(clean_units(i)).rast(intersect(intersect(blank_trials{exp_num(clean_units(i))},nolight_trials{exp_num(clean_units(i))}),run_trials{exp_num(clean_units(i))}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
+        FRbl_stat(i,1) = mean(sum(unitinfo(clean_units(i)).rast(intersect(intersect(blank_trials{exp_num(clean_units(i))},nolight_trials{exp_num(clean_units(i))}),stat_trials{exp_num(clean_units(i))}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
+        for ii = 1:length(lightcond{exp_num(clean_units(i))})
+            FRev_run(i,ii+1) = mean(sum(unitinfo(clean_units(i)).rast(intersect(intersect(vis_trials{exp_num(clean_units(i))},light_trials{exp_num(clean_units(i))}{lightcond{exp_num(clean_units(i))}(ii)}),run_trials{exp_num(clean_units(i))}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
+            FRev_stat(i,ii+1) = mean(sum(unitinfo(clean_units(i)).rast(intersect(intersect(vis_trials{exp_num(clean_units(i))},light_trials{exp_num(clean_units(i))}{lightcond{exp_num(clean_units(i))}(ii)}),stat_trials{exp_num(clean_units(i))}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
+            FRbl_run(i,ii+1) = mean(sum(unitinfo(clean_units(i)).rast(intersect(intersect(blank_trials{exp_num(clean_units(i))},light_trials{exp_num(clean_units(i))}{lightcond{exp_num(clean_units(i))}(ii)}),run_trials{exp_num(clean_units(i))}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
+            FRbl_stat(i,ii+1) = mean(sum(unitinfo(clean_units(i)).rast(intersect(intersect(blank_trials{exp_num(clean_units(i))},light_trials{exp_num(clean_units(i))}{lightcond{exp_num(clean_units(i))}(ii)}),stat_trials{exp_num(clean_units(i))}),light_times(1):light_times(2)),2))/(diff(light_times)/1000);
         end
     else
-        FRev_run(i,:) = nan(1,length(lightconds{exp_num(clean_units(i))}));
-        FRev_stat(i,:) = nan(1,length(lightconds{exp_num(clean_units(i))}));
-        FRbl_run(i,:) = nan(1,length(lightconds{exp_num(clean_units(i))}));
-        FRbl_stat(i,:) = nan(1,length(lightconds{exp_num(clean_units(i))}));
+        FRev_run(i,:) = nan(1,num_lcs);
+        FRev_stat(i,:) = nan(1,num_lcs);
+        FRbl_run(i,:) = nan(1,num_lcs);
+        FRbl_stat(i,:) = nan(1,num_lcs);
     end
 end
         
@@ -844,26 +876,26 @@ end
 runmod = reshape((FRev_run(:)-FRev_stat(:))./(FRev_run(:)+FRev_stat(:)),length(clean_units),num_lcs);
 runmod_bl = reshape((FRbl_run(:)-FRbl_stat(:))./(FRbl_run(:)+FRbl_stat(:)),length(clean_units),num_lcs);
 
-if ~isempty(big_exps)
-    big_units = ismember(exp_num(clean_units),big_exps);
-    FRpref_new = nan(size(FRev));
-    FRpref_new(big_units,:) = FRpref(big_units,[conds end]);
-    FRpref_new(~big_units,:) = FRpref(~big_units,[conds num_lcs]);
-    FRpref = FRpref_new;
-    light_sig_new = nan(size(lightmod)); 
-    light_sig_ons_new = light_sig_new;
-    tuned_sig_new = light_sig_new;
-    light_sig_new(big_units,:) = light_sig(big_units,[conds(conds>1) end]);
-    light_sig_ons_new(big_units,:) = light_sig_ons(big_units,[conds(conds>1) end]);
-    tuned_sig_new(big_units,:) = tuned_sig(big_units,[conds(conds>1) end]);
-    light_sig_new(~big_units,:) = light_sig(~big_units,[conds(conds>1) num_lcs-1]);
-    light_sig_ons_new(~big_units,:) = light_sig_ons(~big_units,[conds(conds>1) num_lcs-1]);
-    tuned_sig_new(~big_units,:) = tuned_sig(~big_units,[conds(conds>1) num_lcs-1]);
-    light_sig = light_sig_new;
-    light_sig_ons = light_sig_ons_new;
-    tuned_sig = tuned_sig_new;
-    clear light_sig_new light_sig_ons_new FRpref_new tuned_sig_new
-end
+% if ~isempty(big_exps)
+%     big_units = ismember(exp_num(clean_units),big_exps);
+%     FRpref_new = nan(size(FRev));
+%     FRpref_new(big_units,:) = FRpref(big_units,[conds end]);
+%     FRpref_new(~big_units,:) = FRpref(~big_units,[conds num_lcs]);
+%     FRpref = FRpref_new;
+%     light_sig_new = nan(size(lightmod)); 
+%     light_sig_ons_new = light_sig_new;
+%     tuned_sig_new = light_sig_new;
+%     light_sig_new(big_units,:) = light_sig(big_units,[conds(conds>1) end]);
+%     light_sig_ons_new(big_units,:) = light_sig_ons(big_units,[conds(conds>1) end]);
+%     tuned_sig_new(big_units,:) = tuned_sig(big_units,[conds(conds>1) end]);
+%     light_sig_new(~big_units,:) = light_sig(~big_units,[conds(conds>1) num_lcs-1]);
+%     light_sig_ons_new(~big_units,:) = light_sig_ons(~big_units,[conds(conds>1) num_lcs-1]);
+%     tuned_sig_new(~big_units,:) = tuned_sig(~big_units,[conds(conds>1) num_lcs-1]);
+%     light_sig = light_sig_new;
+%     light_sig_ons = light_sig_ons_new;
+%     tuned_sig = tuned_sig_new;
+%     clear light_sig_new light_sig_ons_new FRpref_new tuned_sig_new
+% end
 
 %%
 cd(fig_dir)
@@ -874,12 +906,16 @@ light_cells= find(min(light_sig,[],2)<.05);   % find cells with significant effe
 tuned_cells = find(tuned_sig(:,1) < .05);
 if contains(pop,'L6','ignorecase',1)        % L6 == green
     mani_layer = 6;
+elseif contains(pop,'L5&6','ignorecase',1)
+    mani_layer = [5 6];
 elseif contains(pop,'L5','ignorecase',1) 
     mani_layer = 5;
+else
+    mani_layer = 5; % TEMP - for now, focus on L5 for V1 inactivation experiments
 end
-supp_cells = intersect(reg_cells,find(floor(layer')==mani_layer & lightmod<-.33 & light_sig<.05));
+supp_cells = intersect(reg_cells,find(ismember(floor(layer'),mani_layer) & lightmod(:,end)<-.33 & light_sig(:,end)<.05)); % currently using last condition to assess light significance...MAY NEED TO CHANGE
 % other_cells = find(~ismember(clean_units,supp_cells));
-other_cells = find(~ismember(find(floor(layer)==mani_layer&t2p_t>=.475),supp_cells));
+other_cells = find(~ismember(intersect(reg_cells,find(ismember(floor(layer'),mani_layer))),supp_cells));
 
 onset_cells = find(vis_sig_ons<.05 & vis_sig>=.05);
 sust_cells = find(vis_sig_ons<.05&vismod_on'<0&vis_sig<.05&vismod'<0 | vis_sig_ons<.05&vismod_on'>0&vis_sig<.05&vismod'>0);
@@ -939,87 +975,87 @@ print(gcf, '-painters','-depsc','FSvsRS')
 % % significantly light modulated in any light cond; suppressed at onset (med & high conds) and then
 % % activated during early period
 
-%% test significance of overall light modulation and OSI/DSI change using Wilcoxen signed-rank
-lightsig_all_low = signrank(FRev(:,1),FRev(:,2));
-lightsig_all_low_dir = sign(nanmedian(FRev(:,2))-nanmedian(FRev(:,1))); % 1 if light increased FR; -1 if it decreased FR
-lightsig_all_high = signrank(FRev(:,1),FRev(:,end));
-lightsig_all_high_dir = sign(nanmedian(FRev(:,end))-nanmedian(FRev(:,1)));
-lightsig_bl_low = signrank(FRbl(:,1),FRbl(:,2));
-lightsig_bl_low_dir = sign(nanmedian(FRbl(:,2))-nanmedian(FRbl(:,1))); % 1 if light increased FR; -1 if it decreased FR
-lightsig_bl_high = signrank(FRbl(:,1),FRbl(:,end));
-lightsig_bl_high_dir = sign(nanmedian(FRbl(:,end))-nanmedian(FRbl(:,1)));
-lightsig_vis_low = signrank(FRev(visual_cells,1),FRev(visual_cells,2));
-lightsig_vis_low_dir = sign(nanmedian(FRev(visual_cells,2))-nanmedian(FRev(visual_cells,1)));
-lightsig_vis_high = signrank(FRev(visual_cells,1),FRev(visual_cells,end));
-lightsig_vis_high_dir = sign(nanmedian(FRev(visual_cells,end))-nanmedian(FRev(visual_cells,1)));
-lightsig_blvis_low = signrank(FRbl(visual_cells,1),FRbl(visual_cells,2));
-lightsig_blvis_low_dir = sign(nanmedian(FRbl(visual_cells,2))-nanmedian(FRbl(visual_cells,1))); % 1 if light increased FR; -1 if it decreased FR
-lightsig_blvis_high = signrank(FRbl(visual_cells,1),FRbl(visual_cells,end));
-lightsig_blvis_high_dir = sign(nanmedian(FRbl(visual_cells,end))-nanmedian(FRbl(visual_cells,1)));
-lightsig_nonvis_low = signrank(FRev(nonvisual_cells,1),FRev(nonvisual_cells,2));
-lightsig_nonvis_low_dir = sign(nanmedian(FRev(nonvisual_cells,2))-nanmedian(FRev(nonvisual_cells,1)));
-lightsig_nonvis_high = signrank(FRev(nonvisual_cells,1),FRev(nonvisual_cells,end));
-lightsig_nonvis_high_dir = sign(nanmedian(FRev(nonvisual_cells,end))-nanmedian(FRev(nonvisual_cells,1)));
-lightsig_blnonvis_low = signrank(FRbl(nonvisual_cells,1),FRbl(nonvisual_cells,2));
-lightsig_blnonvis_low_dir = sign(nanmedian(FRbl(nonvisual_cells,2))-nanmedian(FRbl(nonvisual_cells,1))); % 1 if light increased FR; -1 if it decreased FR
-lightsig_blnonvis_high = signrank(FRbl(nonvisual_cells,1),FRbl(nonvisual_cells,end));
-lightsig_blnonvis_high_dir = sign(nanmedian(FRbl(nonvisual_cells,end))-nanmedian(FRbl(nonvisual_cells,1)));
-lightsig_vispref_low = signrank(FRpref(:,1),FRpref(:,2));
-lightsig_vispref_low_dir = sign(nanmedian(FRpref(:,2))-nanmedian(FRpref(:,1)));
-lightsig_vispref_high = signrank(FRpref(:,1),FRpref(:,end));
-lightsig_vispref_high_dir = sign(nanmedian(FRpref(:,end))-nanmedian(FRpref(:,1)));
-lightsig_visFRdelt_low = signrank(FRev(:,1)-FRbl(:,1),FRev(:,2)-FRbl(:,2));
-lightsig_visFRdelt_low_dir = sign(nanmedian(FRev(:,2)-FRbl(:,2))-nanmedian(FRev(:,1)-FRbl(:,1)));
-lightsig_visFRdelt_high = signrank(FRev(:,1)-FRbl(:,1),FRev(:,end)-FRbl(:,end));
-lightsig_visFRdelt_high_dir = sign(nanmedian(FRev(:,end)-FRbl(:,end))-nanmedian(FRev(:,1)-FRbl(:,1)));
-lightsig_prefFRdelt_low_pref = signrank(FRpref(:,1)-FRbl(:,1),FRpref(:,2)-FRbl(:,2));
-lightsig_prefFRdelt_low_pref_dir = sign(nanmedian(FRpref(:,2)-FRbl(:,2))-nanmedian(FRpref(:,1)-FRbl(:,1)));
-lightsig_prefFRdelt_high = signrank(FRpref(:,1)-FRbl(:,1),FRpref(:,end)-FRbl(:,end));
-lightsig_prefFRdelt_high_dir = sign(nanmedian(FRpref(:,end)-FRbl(:,end))-nanmedian(FRpref(:,1)-FRbl(:,1)));
-
-lightsig_vals = [lightsig_all_low lightsig_all_low_dir; lightsig_all_high lightsig_all_high_dir; lightsig_bl_low lightsig_bl_low_dir; lightsig_bl_high lightsig_bl_high_dir;...
-    lightsig_vis_low lightsig_vis_low_dir; lightsig_vis_high lightsig_vis_high_dir; lightsig_blvis_low lightsig_blvis_low_dir; lightsig_blvis_high lightsig_blvis_high_dir;...
-    lightsig_nonvis_low lightsig_nonvis_low_dir; lightsig_nonvis_high lightsig_nonvis_high_dir; lightsig_blnonvis_low lightsig_blnonvis_low_dir; lightsig_blnonvis_high lightsig_blnonvis_high_dir;...
-    lightsig_vispref_low lightsig_vispref_low_dir; lightsig_vispref_high lightsig_vispref_high_dir; lightsig_visFRdelt_low lightsig_visFRdelt_low_dir; lightsig_visFRdelt_high lightsig_visFRdelt_high_dir;...
-    lightsig_prefFRdelt_low_pref lightsig_prefFRdelt_low_pref_dir; lightsig_prefFRdelt_high lightsig_prefFRdelt_high_dir];
-
-osiCVsig_tuned_low = signrank(OSI_CV(tuned_cells,1),OSI_CV(tuned_cells,2));
-osiCVsig_tuned_low_dir = sign(nanmedian(OSI_CV(tuned_cells,2))-nanmedian(OSI_CV(tuned_cells,1)));
-osiCVsig_tuned_high = signrank(OSI_CV(tuned_cells,1),OSI_CV(tuned_cells,end));
-osiCVsig_tuned_high_dir = sign(nanmedian(OSI_CV(tuned_cells,end))-nanmedian(OSI_CV(tuned_cells,1)));
-osisig_tuned_low = signrank(OSI(tuned_cells,1),OSI(tuned_cells,2));
-osisig_tuned_low_dir = sign(nanmedian(OSI(tuned_cells,2))-nanmedian(OSI(tuned_cells,1)));
-osisig_tuned_high = signrank(OSI(tuned_cells,1),OSI(tuned_cells,end));
-osisig_tuned_high_dir = sign(nanmedian(OSI(tuned_cells,end))-nanmedian(OSI(tuned_cells,1)));
-dsiCVsig_tuned_low = signrank(DSI_CV(tuned_cells,1),DSI_CV(tuned_cells,2));
-dsiCVsig_tuned_low_dir = sign(nanmedian(DSI_CV(tuned_cells,2))-nanmedian(DSI_CV(tuned_cells,1)));
-dsiCVsig_tuned_high = signrank(DSI_CV(tuned_cells,1),DSI_CV(tuned_cells,end));
-dsiCVsig_tuned_high_dir = sign(nanmedian(DSI_CV(tuned_cells,end))-nanmedian(DSI_CV(tuned_cells,1)));
-dsisig_tuned_low = signrank(DSI(tuned_cells,1),DSI(tuned_cells,2));
-dsisig_tuned_low_dir = sign(nanmedian(DSI(tuned_cells,2))-nanmedian(DSI(tuned_cells,1)));
-dsisig_tuned_high = signrank(DSI(tuned_cells,1),DSI(tuned_cells,end));
-dsisig_tuned_high_dir = sign(nanmedian(DSI(tuned_cells,end))-nanmedian(DSI(tuned_cells,1)));
-osiCVsig_vis_low = signrank(OSI_CV(visual_cells,1),OSI_CV(visual_cells,2));
-osiCVsig_vis_low_dir = sign(nanmedian(OSI_CV(visual_cells,2))-nanmedian(OSI_CV(visual_cells,1)));
-osiCVsig_vis_high = signrank(OSI_CV(visual_cells,1),OSI_CV(visual_cells,end));
-osiCVsig_vis_high_dir = sign(nanmedian(OSI_CV(visual_cells,end))-nanmedian(OSI_CV(visual_cells,1)));
-osisig_vis_low = signrank(OSI(visual_cells,1),OSI(visual_cells,2));
-osisig_vis_low_dir = sign(nanmedian(OSI(visual_cells,2))-nanmedian(OSI(visual_cells,1)));
-osisig_vis_high = signrank(OSI(visual_cells,1),OSI(visual_cells,end));
-osisig_vis_high_dir = sign(nanmedian(OSI(visual_cells,end))-nanmedian(OSI(visual_cells,1)));
-dsiCVsig_vis_low = signrank(DSI_CV(visual_cells,1),DSI_CV(visual_cells,2));
-dsiCVsig_vis_low_dir = sign(nanmedian(DSI_CV(visual_cells,2))-nanmedian(DSI_CV(visual_cells,1)));
-dsiCVsig_vis_high = signrank(DSI_CV(visual_cells,1),DSI_CV(visual_cells,end));
-dsiCVsig_vis_high_dir = sign(nanmedian(DSI_CV(visual_cells,end))-nanmedian(DSI_CV(visual_cells,1)));
-dsisig_vis_low = signrank(DSI(visual_cells,1),DSI(visual_cells,2));
-dsisig_vis_low_dir = sign(nanmedian(DSI(visual_cells,2))-nanmedian(DSI(visual_cells,1)));
-dsisig_vis_high = signrank(DSI(visual_cells,1),DSI(visual_cells,end));
-dsisig_vis_high_dir = sign(nanmedian(DSI(visual_cells,end))-nanmedian(DSI(visual_cells,1)));
-tuningsig_vals = [osiCVsig_tuned_low osiCVsig_tuned_low_dir; osiCVsig_tuned_high osiCVsig_tuned_high_dir; osisig_tuned_low osisig_tuned_low_dir;...
-    osisig_tuned_high osisig_tuned_high_dir; dsiCVsig_tuned_low dsiCVsig_tuned_low_dir; dsiCVsig_tuned_high dsiCVsig_tuned_high_dir;...
-    dsisig_tuned_low dsisig_tuned_low_dir; dsisig_tuned_high dsisig_tuned_high_dir; osiCVsig_vis_low osiCVsig_vis_low_dir;...
-    osiCVsig_vis_high osiCVsig_vis_high_dir; osisig_vis_low osisig_vis_low_dir; osisig_vis_high osisig_vis_high_dir;...
-    dsiCVsig_vis_low dsiCVsig_vis_low_dir; dsiCVsig_vis_high dsiCVsig_vis_high_dir; dsisig_vis_low dsisig_vis_low_dir; dsisig_vis_high dsisig_vis_high_dir];
+% %% test significance of overall light modulation and OSI/DSI change using Wilcoxen signed-rank
+% lightsig_all_low = signrank(FRev(:,1),FRev(:,2));
+% lightsig_all_low_dir = sign(nanmedian(FRev(:,2))-nanmedian(FRev(:,1))); % 1 if light increased FR; -1 if it decreased FR
+% lightsig_all_high = signrank(FRev(:,1),FRev(:,end));
+% lightsig_all_high_dir = sign(nanmedian(FRev(:,end))-nanmedian(FRev(:,1)));
+% lightsig_bl_low = signrank(FRbl(:,1),FRbl(:,2));
+% lightsig_bl_low_dir = sign(nanmedian(FRbl(:,2))-nanmedian(FRbl(:,1))); % 1 if light increased FR; -1 if it decreased FR
+% lightsig_bl_high = signrank(FRbl(:,1),FRbl(:,end));
+% lightsig_bl_high_dir = sign(nanmedian(FRbl(:,end))-nanmedian(FRbl(:,1)));
+% lightsig_vis_low = signrank(FRev(visual_cells,1),FRev(visual_cells,2));
+% lightsig_vis_low_dir = sign(nanmedian(FRev(visual_cells,2))-nanmedian(FRev(visual_cells,1)));
+% lightsig_vis_high = signrank(FRev(visual_cells,1),FRev(visual_cells,end));
+% lightsig_vis_high_dir = sign(nanmedian(FRev(visual_cells,end))-nanmedian(FRev(visual_cells,1)));
+% lightsig_blvis_low = signrank(FRbl(visual_cells,1),FRbl(visual_cells,2));
+% lightsig_blvis_low_dir = sign(nanmedian(FRbl(visual_cells,2))-nanmedian(FRbl(visual_cells,1))); % 1 if light increased FR; -1 if it decreased FR
+% lightsig_blvis_high = signrank(FRbl(visual_cells,1),FRbl(visual_cells,end));
+% lightsig_blvis_high_dir = sign(nanmedian(FRbl(visual_cells,end))-nanmedian(FRbl(visual_cells,1)));
+% lightsig_nonvis_low = signrank(FRev(nonvisual_cells,1),FRev(nonvisual_cells,2));
+% lightsig_nonvis_low_dir = sign(nanmedian(FRev(nonvisual_cells,2))-nanmedian(FRev(nonvisual_cells,1)));
+% lightsig_nonvis_high = signrank(FRev(nonvisual_cells,1),FRev(nonvisual_cells,end));
+% lightsig_nonvis_high_dir = sign(nanmedian(FRev(nonvisual_cells,end))-nanmedian(FRev(nonvisual_cells,1)));
+% lightsig_blnonvis_low = signrank(FRbl(nonvisual_cells,1),FRbl(nonvisual_cells,2));
+% lightsig_blnonvis_low_dir = sign(nanmedian(FRbl(nonvisual_cells,2))-nanmedian(FRbl(nonvisual_cells,1))); % 1 if light increased FR; -1 if it decreased FR
+% lightsig_blnonvis_high = signrank(FRbl(nonvisual_cells,1),FRbl(nonvisual_cells,end));
+% lightsig_blnonvis_high_dir = sign(nanmedian(FRbl(nonvisual_cells,end))-nanmedian(FRbl(nonvisual_cells,1)));
+% lightsig_vispref_low = signrank(FRpref(:,1),FRpref(:,2));
+% lightsig_vispref_low_dir = sign(nanmedian(FRpref(:,2))-nanmedian(FRpref(:,1)));
+% lightsig_vispref_high = signrank(FRpref(:,1),FRpref(:,end));
+% lightsig_vispref_high_dir = sign(nanmedian(FRpref(:,end))-nanmedian(FRpref(:,1)));
+% lightsig_visFRdelt_low = signrank(FRev(:,1)-FRbl(:,1),FRev(:,2)-FRbl(:,2));
+% lightsig_visFRdelt_low_dir = sign(nanmedian(FRev(:,2)-FRbl(:,2))-nanmedian(FRev(:,1)-FRbl(:,1)));
+% lightsig_visFRdelt_high = signrank(FRev(:,1)-FRbl(:,1),FRev(:,end)-FRbl(:,end));
+% lightsig_visFRdelt_high_dir = sign(nanmedian(FRev(:,end)-FRbl(:,end))-nanmedian(FRev(:,1)-FRbl(:,1)));
+% lightsig_prefFRdelt_low_pref = signrank(FRpref(:,1)-FRbl(:,1),FRpref(:,2)-FRbl(:,2));
+% lightsig_prefFRdelt_low_pref_dir = sign(nanmedian(FRpref(:,2)-FRbl(:,2))-nanmedian(FRpref(:,1)-FRbl(:,1)));
+% lightsig_prefFRdelt_high = signrank(FRpref(:,1)-FRbl(:,1),FRpref(:,end)-FRbl(:,end));
+% lightsig_prefFRdelt_high_dir = sign(nanmedian(FRpref(:,end)-FRbl(:,end))-nanmedian(FRpref(:,1)-FRbl(:,1)));
+% 
+% lightsig_vals = [lightsig_all_low lightsig_all_low_dir; lightsig_all_high lightsig_all_high_dir; lightsig_bl_low lightsig_bl_low_dir; lightsig_bl_high lightsig_bl_high_dir;...
+%     lightsig_vis_low lightsig_vis_low_dir; lightsig_vis_high lightsig_vis_high_dir; lightsig_blvis_low lightsig_blvis_low_dir; lightsig_blvis_high lightsig_blvis_high_dir;...
+%     lightsig_nonvis_low lightsig_nonvis_low_dir; lightsig_nonvis_high lightsig_nonvis_high_dir; lightsig_blnonvis_low lightsig_blnonvis_low_dir; lightsig_blnonvis_high lightsig_blnonvis_high_dir;...
+%     lightsig_vispref_low lightsig_vispref_low_dir; lightsig_vispref_high lightsig_vispref_high_dir; lightsig_visFRdelt_low lightsig_visFRdelt_low_dir; lightsig_visFRdelt_high lightsig_visFRdelt_high_dir;...
+%     lightsig_prefFRdelt_low_pref lightsig_prefFRdelt_low_pref_dir; lightsig_prefFRdelt_high lightsig_prefFRdelt_high_dir];
+% 
+% osiCVsig_tuned_low = signrank(OSI_CV(tuned_cells,1),OSI_CV(tuned_cells,2));
+% osiCVsig_tuned_low_dir = sign(nanmedian(OSI_CV(tuned_cells,2))-nanmedian(OSI_CV(tuned_cells,1)));
+% osiCVsig_tuned_high = signrank(OSI_CV(tuned_cells,1),OSI_CV(tuned_cells,end));
+% osiCVsig_tuned_high_dir = sign(nanmedian(OSI_CV(tuned_cells,end))-nanmedian(OSI_CV(tuned_cells,1)));
+% osisig_tuned_low = signrank(OSI(tuned_cells,1),OSI(tuned_cells,2));
+% osisig_tuned_low_dir = sign(nanmedian(OSI(tuned_cells,2))-nanmedian(OSI(tuned_cells,1)));
+% osisig_tuned_high = signrank(OSI(tuned_cells,1),OSI(tuned_cells,end));
+% osisig_tuned_high_dir = sign(nanmedian(OSI(tuned_cells,end))-nanmedian(OSI(tuned_cells,1)));
+% dsiCVsig_tuned_low = signrank(DSI_CV(tuned_cells,1),DSI_CV(tuned_cells,2));
+% dsiCVsig_tuned_low_dir = sign(nanmedian(DSI_CV(tuned_cells,2))-nanmedian(DSI_CV(tuned_cells,1)));
+% dsiCVsig_tuned_high = signrank(DSI_CV(tuned_cells,1),DSI_CV(tuned_cells,end));
+% dsiCVsig_tuned_high_dir = sign(nanmedian(DSI_CV(tuned_cells,end))-nanmedian(DSI_CV(tuned_cells,1)));
+% dsisig_tuned_low = signrank(DSI(tuned_cells,1),DSI(tuned_cells,2));
+% dsisig_tuned_low_dir = sign(nanmedian(DSI(tuned_cells,2))-nanmedian(DSI(tuned_cells,1)));
+% dsisig_tuned_high = signrank(DSI(tuned_cells,1),DSI(tuned_cells,end));
+% dsisig_tuned_high_dir = sign(nanmedian(DSI(tuned_cells,end))-nanmedian(DSI(tuned_cells,1)));
+% osiCVsig_vis_low = signrank(OSI_CV(visual_cells,1),OSI_CV(visual_cells,2));
+% osiCVsig_vis_low_dir = sign(nanmedian(OSI_CV(visual_cells,2))-nanmedian(OSI_CV(visual_cells,1)));
+% osiCVsig_vis_high = signrank(OSI_CV(visual_cells,1),OSI_CV(visual_cells,end));
+% osiCVsig_vis_high_dir = sign(nanmedian(OSI_CV(visual_cells,end))-nanmedian(OSI_CV(visual_cells,1)));
+% osisig_vis_low = signrank(OSI(visual_cells,1),OSI(visual_cells,2));
+% osisig_vis_low_dir = sign(nanmedian(OSI(visual_cells,2))-nanmedian(OSI(visual_cells,1)));
+% osisig_vis_high = signrank(OSI(visual_cells,1),OSI(visual_cells,end));
+% osisig_vis_high_dir = sign(nanmedian(OSI(visual_cells,end))-nanmedian(OSI(visual_cells,1)));
+% dsiCVsig_vis_low = signrank(DSI_CV(visual_cells,1),DSI_CV(visual_cells,2));
+% dsiCVsig_vis_low_dir = sign(nanmedian(DSI_CV(visual_cells,2))-nanmedian(DSI_CV(visual_cells,1)));
+% dsiCVsig_vis_high = signrank(DSI_CV(visual_cells,1),DSI_CV(visual_cells,end));
+% dsiCVsig_vis_high_dir = sign(nanmedian(DSI_CV(visual_cells,end))-nanmedian(DSI_CV(visual_cells,1)));
+% dsisig_vis_low = signrank(DSI(visual_cells,1),DSI(visual_cells,2));
+% dsisig_vis_low_dir = sign(nanmedian(DSI(visual_cells,2))-nanmedian(DSI(visual_cells,1)));
+% dsisig_vis_high = signrank(DSI(visual_cells,1),DSI(visual_cells,end));
+% dsisig_vis_high_dir = sign(nanmedian(DSI(visual_cells,end))-nanmedian(DSI(visual_cells,1)));
+% tuningsig_vals = [osiCVsig_tuned_low osiCVsig_tuned_low_dir; osiCVsig_tuned_high osiCVsig_tuned_high_dir; osisig_tuned_low osisig_tuned_low_dir;...
+%     osisig_tuned_high osisig_tuned_high_dir; dsiCVsig_tuned_low dsiCVsig_tuned_low_dir; dsiCVsig_tuned_high dsiCVsig_tuned_high_dir;...
+%     dsisig_tuned_low dsisig_tuned_low_dir; dsisig_tuned_high dsisig_tuned_high_dir; osiCVsig_vis_low osiCVsig_vis_low_dir;...
+%     osiCVsig_vis_high osiCVsig_vis_high_dir; osisig_vis_low osisig_vis_low_dir; osisig_vis_high osisig_vis_high_dir;...
+%     dsiCVsig_vis_low dsiCVsig_vis_low_dir; dsiCVsig_vis_high dsiCVsig_vis_high_dir; dsisig_vis_low dsisig_vis_low_dir; dsisig_vis_high dsisig_vis_high_dir];
 
 %% set up coloring
 % if contains(mani,'halo','ignorecase',1)
@@ -1028,6 +1064,8 @@ tuningsig_vals = [osiCVsig_tuned_low osiCVsig_tuned_low_dir; osiCVsig_tuned_high
 if contains(pop,'L6','ignorecase',1)        % L6 == green
     color_mat = [0 0 0; .166 .674 .188; .166 .674 .188;.166 .674 .188];
     nonvis_color_mat = [.5 .5 .5; 1 .75 .75; 0.7, 0.5, 0.5];
+elseif contains(pop,'L5&6','ignorecase',1)
+    color_mat = [0 .447 .741; .166 .674 .188; .083 .567 .600]; % black, blue, green, teal
 elseif contains(pop,'L5','ignorecase',1)    % L5 == blue
     color_mat = [0 0 0; 0 .447 .741; 0 .447 .741; 0 .447 .741];
     nonvis_color_mat = [.5 .5 .5; 1 .75 .75; 0.7, 0.5, 0.5];
@@ -1134,6 +1172,48 @@ set(gca,'fontsize',18,'linewidth',2)
 print(gcf, '-dpng','lightmodbydepth_top')
 print(gcf,'-painters','-depsc','lightmodbydepth_top')
 
+figure;
+subplot(111)
+plot(lightmod(:,end),distfromgran','.','MarkerSize',24,'color',color_mat(end,:))
+% hold on; plot(lightmod_early(1:28,3),distfromlastch(1:28),'r.','MarkerSize',24)
+h = get(gca,'ytick');
+% set(gca,'yticklabel',h*25);
+xlim([-1 1])
+ylim([min(distfromgran),max(distfromgran)])
+yax = get(gca,'YLim');
+line([0 0],yax,'Color','k','LineStyle','--','linewidth',2)
+% legend('low','high')
+xlabel('Light modulation index ','Fontsize',24)
+ylabel(strcat('Depth from L4-5 border (in um)'),'Fontsize',18)
+set(gca,'fontsize',18,'linewidth',2)
+print(gcf, '-dpng','lightmodbydepth_gran')
+print(gcf,'-painters','-depsc','lightmodbydepth_gran')
+
+if contains(mani,'2LEDs','ignorecase',1)
+    LED_titles = {'Red LED','Blue LED', 'Red & Blue LEDs'};
+    figure; 
+    for i = 1:size(lightmod,2)
+        subplot(1,size(lightmod,2),i)
+        scatter(lightmod(:,i),distfromgran',75,'filled','markerfacecolor',[1 1 1],'markeredgecolor',[0 0 0],'markerfacealpha',1)
+        hold on;
+        scatter(lightmod(intersect(supp_cells,find(floor(layer)==5)),i),distfromgran(intersect(supp_cells,find(floor(layer)==5)))',75,'filled','markerfacecolor',color_mat(1,:),'markerfacealpha',1)
+        scatter(lightmod(intersect(supp_cells,find(floor(layer)==6)),i),distfromgran(intersect(supp_cells,find(floor(layer)==6)))',75,'filled','markerfacecolor',color_mat(2,:),'markerfacealpha',1)
+        h = get(gca,'ytick');
+        % set(gca,'yticklabel',h);
+        xlim([-1 1])
+        ylim([min(distfromgran),max(distfromgran)])
+        yax = get(gca,'YLim');
+        line([0 0],yax,'Color','k','LineStyle','--','linewidth',2)
+        % legend('low','high')
+        xlabel('Light modulation index ','Fontsize',24)
+        ylabel(strcat('Depth from L4-5 border (in um)'),'Fontsize',18)
+        title(LED_titles{i})
+        set(gca,'fontsize',18,'linewidth',2)
+    end
+    set(gcf,'Paperposition',[0 0 20 6])
+    print(gcf, '-dpng','lightmodbydepth_fromgran_bytype')
+    print(gcf,'-painters','-depsc','lightmodbydepth_fromgran_bytype')
+end
 % 
 % % trying by shank...
 % shank = unique(shk);    % this is INCORRECT - shk is only from last experiment, not clean units

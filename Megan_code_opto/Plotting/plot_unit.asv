@@ -131,11 +131,11 @@ if prefPSTH == 1
     [~,prefdir] = max(abs(tuning(unit_ind).curve(1,:)-FRs(unit_ind).baseline));   % direction w/ biggest change from baseline (defined from no-light condition)
     ori_trials = params.trial_type(:,strcmpi(params.IVs,'ori'))==oris(prefdir);
     subplot(1,3+prefPSTH,3+prefPSTH)
-    ori_psth = make_psth_v2(binsize,0:binsize:totaltime,ori_trials,unit_rast,all_light);
+    ori_psth = make_psth_v2(binsize,0:binsize:total_time_ms/1000,ori_trials,unit_rast,all_light);
     plot_psth(ori_psth,binsize,params.prestim,params.stimtime,totaltime,all_light(ori_trials),light_start,pulse_dur,opsin,color_mat);
 end
 
-set(gcf, 'Position', [100, 100, 500*(3+prefPSTH), 400])
+set(gcf, 'Position', [100, 100, 1500, 400])
 print(gcf,'-dpng',fig_name)
 % print2eps(save_fig_name,clust304_fig)
 print(gcf,'-painters','-depsc',fig_name)
